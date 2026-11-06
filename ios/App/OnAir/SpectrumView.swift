@@ -170,31 +170,113 @@ private struct SpectrumMetalView: UIViewRepresentable {
     func updateUIView(_ view: MTKView, context: Context) {}
 }
 
-/// Tap to tune, drag to scrub the tuning, pinch to zoom.
+/// Reads the finger gestures. UIKit is used here because it can tell one finger from two. Two fingers either scrub or zoom, whichever their
+/// first movement shows; after that the gesture stays that kind until the fingers lift.
+private struct SpectrumGestures: UIViewRepresentable {
+    enum TwoFingers { case undecided, scrub, zoom }
+
+    let tap: (CGFloat) -> Void
+    let pan: (CGFloat, Bool) -> Void                // change in points since the last call, finished
+    let scrub: (CGFloat, Bool) -> Void              // points from the start, finished
+    let zoom: (Double, Bool) -> Void                // scale from the start, finished
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isMultipleTouchEnabled = true
+        let c = context.coordinator
+        let tapper = UITapGestureRecognizer(target: c, action: #selector(Coordinator.tapped(_:)))
+        let onePan = UIPanGestureRecognizer(target: c, action: #selector(Coordinator.panned(_:)))
+        onePan.maximumNumberOfTouches = 1
+        let twoPan = UIPanGestureRecognizer(target: c, action: #selector(Coordinator.twoPanned(_:)))
+        twoPan.minimumNumberOfTouches = 2
+        twoPan.maximumNumberOfTouches = 2
+        let pinch = UIPinchGestureRecognizer(target: c, action: #selector(Coordinator.pinched(_:)))
+        twoPan.delegate = c
+        pinch.delegate = c
+        [tapper, onePan, twoPan, pinch].forEach(view.addGestureRecognizer)
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) { context.coordinator.parent = self }
+
+    @MainActor final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: SpectrumGestures?
+        private var lastPan: CGFloat = 0
+        private var mode = TwoFingers.undecided
+        private var translation: CGFloat = 0
+        private var scale = 1.0
+
+        func gestureRecognizer(_ a: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith b: UIGestureRecognizer) -> Bool { true }
+
+        @objc func tapped(_ r: UITapGestureRecognizer) { parent?.tap(r.location(in: r.view).x) }
+
+        @objc func panned(_ r: UIPanGestureRecognizer) {
+            let x = r.translation(in: r.view).x
+            if r.state == .began { lastPan = 0 }
+            let done = r.state == .ended || r.state == .cancelled
+            parent?.pan(x - lastPan, done)
+            lastPan = x
+        }
+
+        @objc func twoPanned(_ r: UIPanGestureRecognizer) {
+            translation = r.translation(in: r.view).x
+            let done = r.state == .ended || r.state == .cancelled
+            if mode == .undecided, abs(translation) > 14 { mode = .scrub }
+            if mode == .scrub { parent?.scrub(translation, done) }
+            if done { finish() }
+        }
+
+        @objc func pinched(_ r: UIPinchGestureRecognizer) {
+            scale = r.scale
+            let done = r.state == .ended || r.state == .cancelled
+            if mode == .undecided, abs(scale - 1) > 0.1 { mode = .zoom }
+            if mode == .zoom { parent?.zoom(scale, done) }
+            if done { finish() }
+        }
+
+        private func finish() {
+            mode = .undecided
+            translation = 0
+            scale = 1
+        }
+    }
+}
+
+/// One finger pans, two fingers scrub the tuning, a pinch zooms, a tap jumps to a frequency.
 struct SpectrumPage: View {
     let receiver: Receiver
     let spectrum: SpectrumRenderer
     @State private var pinchStart: Double?
-    @State private var dragStart: Double?
+    @State private var scrubStart: Double?
     @State private var lastScrub = 0.0
-    @State private var lastScrubTime = Date.distantPast
+    @State private var lastTuneTime = Date.distantPast
+    @State private var panRemainderMhz = 0.0
     @State private var haptics = DetentHaptics()
 
     var body: some View {
         GeometryReader { geometry in
+            let width = geometry.size.width
             ZStack(alignment: .topLeading) {
                 SpectrumMetalView(renderer: spectrum)
-                marker(width: geometry.size.width)
+                marker(width: width)
                 axis
                 if !receiver.status.running {
                     Text("Press play to start").foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
                 }
+                SpectrumGestures(
+                    tap: { x in
+                        onair_spectrum_tune(spectrum.frequency(atFraction: x / width) / 1e6)
+                        receiver.refresh()
+                    },
+                    pan: { change, done in pan(change: change, width: width, done: done) },
+                    scrub: { points, done in scrub(points: points, width: width, done: done) },
+                    zoom: { scale, done in zoom(scale: scale, done: done) }
+                )
             }
-            .contentShape(Rectangle())
-            .gesture(tap(width: geometry.size.width))
-            .simultaneousGesture(drag(width: geometry.size.width))
-            .simultaneousGesture(pinch)
         }
     }
 
@@ -222,34 +304,39 @@ struct SpectrumPage: View {
         .allowsHitTesting(false)
     }
 
-    private func tap(width: CGFloat) -> some Gesture {
-        SpatialTapGesture().onEnded { value in
-            onair_spectrum_tune(spectrum.frequency(atFraction: value.location.x / width) / 1e6)
-            receiver.refresh()
+    private var step: Double { receiver.status.family == OnAirFamily.fm ? 0.1 : 0.0125 }
+
+    /// The view moves first. What it cannot move, because it has reached the edge of the capture, retunes the radio, so a pan crosses the band.
+    private func pan(change: CGFloat, width: CGFloat, done: Bool) {
+        let wanted = spectrum.visibleCentre - change / width * spectrum.visibleSpan
+        let left = spectrum.visibleSpan / 2, right = 1 - left
+        let clamped = min(max(wanted, left), right)
+        spectrum.visibleCentre = clamped
+        panRemainderMhz += (wanted - clamped) * spectrum.spanHz / 1e6
+        guard abs(panRemainderMhz) >= step, done || Date().timeIntervalSince(lastTuneTime) > 0.08 else {
+            if done { panRemainderMhz = 0 }
+            return
         }
+        let steps = (panRemainderMhz / step).rounded(.towardZero)
+        panRemainderMhz = done ? 0 : panRemainderMhz - steps * step
+        lastTuneTime = Date()
+        haptics.tick()
+        receiver.tune(mhz: receiver.status.mhz + steps * step)
     }
 
-    /// One finger scrubs the tuning: the marker follows the finger, and the receiver retunes as it moves.
-    private func drag(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 4).onChanged { value in
-            let start = dragStart ?? receiver.status.mhz
-            dragStart = start
-            let spanMhz = (spectrum.highHz - spectrum.lowHz) / 1e6
-            let step = scrubStep(spanMhz: spanMhz, width: width)
-            let wanted = start + value.translation.width / width * spanMhz
-            let snapped = (wanted / step).rounded() * step
-            guard abs(snapped - lastScrub) >= step / 2, Date().timeIntervalSince(lastScrubTime) > 0.04 else { return }
-            lastScrub = snapped
-            lastScrubTime = Date()
-            haptics.tick()
-            onair_spectrum_tune(snapped)
-            receiver.refresh()
-            keepInView(mhz: snapped)
-        }
-        .onEnded { _ in
-            dragStart = nil
-            lastScrub = 0
-        }
+    private func scrub(points: CGFloat, width: CGFloat, done: Bool) {
+        let start = scrubStart ?? receiver.status.mhz
+        scrubStart = done ? nil : start
+        let spanMhz = (spectrum.highHz - spectrum.lowHz) / 1e6
+        let fine = scrubStep(spanMhz: spanMhz, width: width)
+        let snapped = ((start + points / width * spanMhz) / fine).rounded() * fine
+        guard abs(snapped - lastScrub) >= fine / 2, done || Date().timeIntervalSince(lastTuneTime) > 0.04 else { return }
+        lastScrub = done ? 0 : snapped
+        lastTuneTime = Date()
+        haptics.tick()
+        onair_spectrum_tune(snapped)
+        receiver.refresh()
+        keepInView(mhz: snapped)
     }
 
     private func scrubStep(spanMhz: Double, width: CGFloat) -> Double {
@@ -269,13 +356,10 @@ struct SpectrumPage: View {
         if fraction > high { setView(centre: spectrum.visibleCentre + (fraction - high), span: spectrum.visibleSpan) }
     }
 
-    private var pinch: some Gesture {
-        MagnifyGesture().onChanged { value in
-            let start = pinchStart ?? spectrum.visibleSpan
-            pinchStart = start
-            setView(centre: spectrum.visibleCentre, span: start / value.magnification)
-        }
-        .onEnded { _ in pinchStart = nil }
+    private func zoom(scale: Double, done: Bool) {
+        let start = pinchStart ?? spectrum.visibleSpan
+        pinchStart = done ? nil : start
+        setView(centre: spectrum.visibleCentre, span: start / max(scale, 0.01))
     }
 
     private func setView(centre: Double, span: Double) {
