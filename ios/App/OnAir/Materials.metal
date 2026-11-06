@@ -58,3 +58,30 @@ static float noise(float2 p) {
     float value = (0.3 + 0.72 * lamp) * glow + grain;
     return half4(half3(float3(1.0, 0.8, 0.5) * value), 1);
 }
+
+// ---- television: NV12 planes to RGB, on a full-screen quad
+struct VideoOut { float4 position [[position]]; float2 uv; };
+struct VideoUniforms { float2 scale; float bt709; float fullRange; };
+
+vertex VideoOut videoVertex(uint id [[vertex_id]], constant VideoUniforms& u [[buffer(0)]]) {
+    const float2 corner[4] = {float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, 1)};
+    VideoOut o;
+    o.position = float4(corner[id] * u.scale, 0, 1);
+    o.uv = float2(corner[id].x * 0.5 + 0.5, 0.5 - corner[id].y * 0.5);
+    return o;
+}
+
+fragment float4 videoFragment(VideoOut in [[stage_in]], constant VideoUniforms& u [[buffer(0)]], texture2d<float> luma [[texture(0)]], texture2d<float> chroma [[texture(1)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    float y = luma.sample(s, in.uv).r;
+    float2 c = chroma.sample(s, in.uv).rg - 0.5;
+    if (u.fullRange < 0.5) { y = (y - 16.0 / 255.0) * 255.0 / 219.0; c *= 255.0 / 224.0; }
+    float3 rgb = u.bt709 > 0.5 ? float3(y + 1.5748 * c.y, y - 0.1873 * c.x - 0.4681 * c.y, y + 1.8556 * c.x)
+                               : float3(y + 1.402 * c.y, y - 0.3441 * c.x - 0.7141 * c.y, y + 1.772 * c.x);
+    return float4(saturate(rgb), 1);
+}
+
+fragment float4 videoRgbaFragment(VideoOut in [[stage_in]], texture2d<float> picture [[texture(0)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    return float4(picture.sample(s, in.uv).rgb, 1);
+}

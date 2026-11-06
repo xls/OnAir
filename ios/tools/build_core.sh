@@ -10,6 +10,7 @@ LIBIIO_TAG=v0.26   # the desktop driver refuses libiio 1.x
 ARGS=""
 for sdk in $SDKS; do
   B="$OUT/$sdk"
+  "$ROOT/ios/tools/build_ffmpeg.sh" "$sdk"
   # libiio, unchanged from upstream: network backend only, using the SDK's libxml2. The core finds it by name (DynLib, native_common.h).
   [ -d "$OUT/deps/libiio" ] || git clone -q --depth 1 --branch "$LIBIIO_TAG" https://github.com/analogdevicesinc/libiio.git "$OUT/deps/libiio"
   SDKPATH=$(xcrun --sdk "$sdk" --show-sdk-path)
@@ -32,11 +33,11 @@ for sdk in $SDKS; do
   } > "$B/iio_symbols.c"
   cmake -S "$ROOT/ios/core" -B "$B" -G Ninja \
     -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$sdk" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
-    -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DCMAKE_BUILD_TYPE=Release -DONAIR_IIO_SYMBOLS="$B/iio_symbols.c"
+    -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DCMAKE_BUILD_TYPE=Release -DONAIR_IIO_SYMBOLS="$B/iio_symbols.c" -DDECT2_FFMPEG_PREFIX="$B/ffmpeg"
   cmake --build "$B" --target onair_ios
   # one archive for Xcode: every static library of the build, Rust included
   mkdir -p "$B/merged"
-  find "$B" -name '*.a' -not -path '*/merged/*' -not -path '*/deps/*' | sort > "$B/merged/libs.txt"
+  find "$B" -name '*.a' -not -path '*/merged/*' -not -path '*/deps/*' -not -path '*/ffmpeg-build/*' | sort > "$B/merged/libs.txt"
   xcrun libtool -static -no_warning_for_no_symbols -o "$B/merged/libOnAirCore.a" -filelist "$B/merged/libs.txt" 2>/dev/null
   ARGS="$ARGS -library $B/merged/libOnAirCore.a -headers $ROOT/ios/core/include"
 done

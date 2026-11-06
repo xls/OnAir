@@ -92,6 +92,31 @@ void onair_audio_recent(float* stereo, int frames);              // the last fra
 int onair_fm_multiplex(float* db, int maxPoints, float* maxHz);  // the FM multiplex spectrum: points written
 int onair_fm_rds_symbols(float* xy, int maxPoints);              // recent RDS symbols, x y pairs: points written
 
+// TV. Services, stream health and the playing service as JSON; picture planes stay valid until the next call of onair_video_latest
+typedef struct {
+    int width, height;
+    double displayAspect;                // width / height, 0 = unknown
+    const unsigned char* y;              // NV12: width * height bytes, tightly packed
+    const unsigned char* uv;             // width * (height / 2) bytes
+    const unsigned char* rgba;           // instead of y and uv, when a subtitle was burnt in
+    bool bt709, fullRange;
+} OnAirVideoFrame;
+bool onair_video_latest(OnAirVideoFrame* frame);
+const char* onair_tv_json(void);
+void onair_tv_play(int serviceId);                               // -1 stops
+int onair_tv_first_service(void);                                // for testing: a service to play, -1 when none or one is playing
+void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic
+const char* onair_epg_json(int serviceId);
+// Teletext: 25 rows of 40 cells. Each is bits 0-20 the character or the mosaic's six cells, 21-23 foreground, 24-26 background, 27 mosaic, 28-29 double height, 30 separated.
+// links: red, green, yellow, cyan pages. False when the page has not arrived.
+bool onair_teletext_page(int page, unsigned* cells, int* links);
+const char* onair_teletext_pages_json(void);
+
+// channels of the current mode's region plan and its known frequencies; the plan is OnAir's, "" follows the phone's region
+const char* onair_channels_json(void);
+void onair_channel_plan_set(const char* planId);
+void onair_channel_pick(double mhz, double bandwidthMhz);        // tunes, and sets the plan's channel width where the mode has one
+
 // the active mode's decoded results: summary, cards and tables
 const char* onair_results_json(void);
 

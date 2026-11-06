@@ -27,7 +27,7 @@ struct RadioSheet: View {
                 .pickerStyle(.segmented)
                 .onChange(of: kind) { _, new in port = new.defaultPort }
                 TextField("Address", text: $host)
-                    .keyboardType(.numbersAndPunctuation)
+                    .keyboardType(.decimalPad)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 if kind == .rtlTcp {

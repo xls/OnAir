@@ -159,7 +159,7 @@ private struct MemoryButton: View {
     }
 
     var body: some View {
-        HardwareKey(lit: mhz > 0, action: recall) {
+        HardwareKey(lit: mhz > 0, hold: save, action: recall) {
             VStack(spacing: 0) {
                 EngravedLabel(text: String(number), size: 8)
                 Text(mhz > 0 ? Self.short(mhz) : "")
@@ -168,10 +168,6 @@ private struct MemoryButton: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             }
-        }
-        .onLongPressGesture {
-            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-            save()
         }
     }
 }

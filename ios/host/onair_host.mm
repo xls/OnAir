@@ -7,6 +7,11 @@
 #include "ui/settings_table.h"
 #include "gfx/colormap.h"
 #include "results_json.h"
+#include "dect2/channels/freq_db.h"
+#include "dect2/channels/tvplan.h"
+#include "platform/platform.h"
+#include "dect2/tv/teletext.h"
+#include "dect2/tv/player.h"
 #include "platform/power.h"
 #include "dect2/common/thread_name.h"
 #include "dect2/net/netradio.h"
@@ -26,6 +31,7 @@ void routeTab(App& a, const std::string& name);                                 
 namespace dect2 { void audioIosRecent(float* stereo, int frames); uint64_t audioIosPlayedFrames(); }                   // audioout_ios.mm
 bool settingsIsBound(const settings::Info& i);                                       // ui/settings_window.cpp
 settings::Val settingsRead(App& a, const settings::Info& i);
+std::vector<dect2::FreqEntry> freqdbForCurrentMode(App& a);                           // freqdb/freqdb_ui.cpp
 void settingsWrite(App& a, const settings::Info& i, const settings::Val& v);
 
 namespace {
@@ -35,13 +41,30 @@ bool gBackground = false, gStarted = false;
 std::string gStatus, gJson;
 uint64_t gVideoFrames = 0;
 
+// which TV plans fit the mode on screen, and the settings key of the one chosen (the keys of app/bandplan/tvchan_ui.cpp)
+unsigned tvPlanMask(int family, const char** group) {
+    switch (family) {
+    case 0: *group = "dvb"; return dect2::tvplan::DvbAny;
+    case 1: case 3: *group = "atsc"; return dect2::tvplan::Atsc | dect2::tvplan::Atsc3;
+    case 4: *group = "isdbt"; return dect2::tvplan::IsdbT;
+    case 7: *group = "dtmb"; return dect2::tvplan::Dtmb;
+    case 8: *group = "analog"; return dect2::tvplan::Analog;
+    case 40: *group = "dvbc"; return dect2::tvplan::DvbC;
+    default: *group = ""; return 0;
+    }
+}
+
+std::string phoneCountry() {
+    NSString* code = [NSLocale.currentLocale countryCode];
+    return code ? code.UTF8String : "";
+}
+
 std::string quoted(const std::string& s) { return "\"" + dect2::jsonEscape(s) + "\""; }
 std::string textOf(double v) { return dect2::jsonNum(v); }
 
 // The settings that do something in this app. An allow-list: most of the table is about desktop windows, themes, updates and programs that do not exist here
 bool settingHidden(const settings::Info& i) {
-    static const std::set<std::string> shown = {"powerLowMode", "wfMap3", "bwAuto", "subsOn", "recFormat", "fmMono", "fmStereo", "fmDeemph", "fmRegion", "fmSquelch",
-                                                "ttxPage", "tvLang", "adsbLat", "adsbLon"};
+    static const std::set<std::string> shown = {"wfMap3", "bwAuto", "subsOn", "fmMono", "fmStereo", "fmDeemph", "fmRegion", "fmSquelch", "adsbLat", "adsbLon"};
     return !shown.count(i.key);
 }
 
@@ -272,6 +295,98 @@ void onair_spectrum_scrub(double mhz) {
     else tuneFreq(a, mhz);
 }
 
+bool onair_video_latest(OnAirVideoFrame* out) {
+    App& a = appRunApp();
+    static uint64_t seq = 0;
+    static std::shared_ptr<const dect2::VideoFrame> held;
+    std::shared_ptr<const dect2::VideoFrame> f = a.engine.player().videoFrame(seq);
+    if (!f) return false;
+    held = f;
+    gVideoFrames++;
+    out->width = f->w;
+    out->height = f->h;
+    out->displayAspect = f->dar;
+    out->y = f->y.empty() ? nullptr : f->y.data();
+    out->uv = f->uv.empty() ? nullptr : f->uv.data();
+    out->rgba = f->rgba.empty() ? nullptr : f->rgba.data();
+    out->bt709 = f->bt709;
+    out->fullRange = f->fullRange;
+    return true;
+}
+
+const char* onair_tv_json(void) {
+    App& a = appRunApp();
+    dect2::PlayerStats st = a.engine.player().stats();
+    std::string s = "{\"selected\":" + std::to_string(a.engine.player().selected()) + ",\"network\":" + quoted(a.ts.networkName) + ",\"muxKbps\":" + textOf(a.ts.muxKbps) +
+                    ",\"status\":" + quoted(st.status) + ",\"video\":" + quoted(st.videoCodec) + ",\"audio\":" + quoted(st.audioCodec) + ",\"width\":" + std::to_string(st.width) +
+                    ",\"height\":" + std::to_string(st.height) + ",\"fps\":" + textOf(st.fps) + ",\"hardware\":" + (st.hardware ? "true" : "false") + ",\"services\":[";
+    bool first = true;
+    for (const dect2::TsService& v : a.ts.services) {
+        if (!first) s += ",";
+        first = false;
+        s += "{\"id\":" + std::to_string(v.id) + ",\"name\":" + quoted(v.name) + ",\"provider\":" + quoted(v.provider) + ",\"lcn\":" + std::to_string(v.lcn) + ",\"type\":" + quoted(v.typeName()) +
+             ",\"now\":" + quoted(v.now) + ",\"next\":" + quoted(v.next) + ",\"scrambled\":" + (v.scrambled ? "true" : "false") + "}";
+    }
+    gJson = s + "]}";
+    return gJson.c_str();
+}
+
+void onair_tv_play(int serviceId) {
+    App& a = appRunApp();
+    if (serviceId < 0) { a.engine.player().select(-1); a.playReq = -1; return; }
+    a.playReq = serviceId;   // draw_ui.cpp starts it once its programme table has arrived, with the volume and language set
+}
+
+int onair_tv_first_service(void) {
+    App& a = appRunApp();
+    if (a.engine.player().selected() >= 0 || a.playReq >= 0) return -1;
+    for (const dect2::TsService& v : a.ts.services) if (!v.scrambled && v.havePmt) return v.id;
+    return -1;
+}
+
+void onair_tv_bandwidth(double mhz) {
+    App& a = appRunApp();
+    if (mhz <= 0) { setDvbBandwidth(a, -1); return; }
+    for (int i = 0; i < (int)(sizeof kBw / sizeof *kBw); i++)
+        if (std::fabs(kBw[i].mhz - mhz) < 0.1) { setDvbBandwidth(a, i); return; }
+}
+
+const char* onair_epg_json(int serviceId) {
+    App& a = appRunApp();
+    std::string s = "[";
+    const auto it = a.epg.find(serviceId);
+    if (it != a.epg.end())
+        for (const dect2::EpgEvent& e : it->second) {
+            if (s.size() > 1) s += ",";
+            s += "{\"start\":" + std::to_string(e.start) + ",\"duration\":" + std::to_string(e.duration) + ",\"title\":" + quoted(e.title) + ",\"text\":" + quoted(e.text) +
+                 ",\"extended\":" + quoted(e.extended) + ",\"genre\":" + std::to_string(e.genre) + "}";
+        }
+    gJson = s + "]";
+    return gJson.c_str();
+}
+
+bool onair_teletext_page(int page, unsigned* cells, int* links) {
+    dect2::TtxPage p;
+    if (!appRunApp().engine.teletext().page(page, p)) return false;
+    dect2::TtxGrid grid;
+    dect2::ttxRender(p, grid);
+    for (int r = 0; r < 25; r++)
+        for (int c = 0; c < 40; c++) {
+            const dect2::TtxCell& k = grid[(size_t)r][(size_t)c];
+            const unsigned body = k.mosaic ? k.sextants : (k.ch & 0x1FFFFF);
+            cells[r * 40 + c] = body | (unsigned)(k.fg & 7) << 21 | (unsigned)(k.bg & 7) << 24 | (k.mosaic ? 1u << 27 : 0u) | (unsigned)(k.dh & 3) << 28 | (k.separated ? 1u << 30 : 0u);
+        }
+    for (int i = 0; i < 4; i++) links[i] = p.fastext[i];
+    return true;
+}
+
+const char* onair_teletext_pages_json(void) {
+    std::string s = "[";
+    for (int n : appRunApp().engine.teletext().pages()) { if (s.size() > 1) s += ","; s += std::to_string(n); }
+    gJson = s + "]";
+    return gJson.c_str();
+}
+
 void onair_audio_recent(float* stereo, int frames) { dect2::audioIosRecent(stereo, frames); }
 
 int onair_fm_multiplex(float* db, int maxPoints, float* maxHz) {
@@ -298,6 +413,54 @@ const char* onair_fm_json(void) {
             ",\"stereo\":" + (f.stereo ? "true" : "false") + ",\"snrDb\":" + textOf(f.snrDb) + ",\"levelDbfs\":" + textOf(f.levelDbfs) + ",\"rds\":" + (f.rdsSync ? "true" : "false") +
             ",\"rdsOk\":" + textOf(f.rdsBlockOkPct) + ",\"traffic\":" + (f.trafficProgram ? "true" : "false") + ",\"devKhz\":" + textOf(f.devKhz) + ",\"multipath\":" + textOf(f.multipathPct) + ",\"pilot\":" + textOf(f.pilotPct) + "}";
     return gJson.c_str();
+}
+
+const char* onair_channels_json(void) {
+    App& a = appRunApp();
+    namespace tp = dect2::tvplan;
+    const char* group = "";
+    const unsigned mask = tvPlanMask(a.family, &group);
+    const tp::Plan* plan = nullptr;
+    std::string out = "{";
+    if (mask) {
+        const std::string chosen = plat::prefs().getS((std::string("tvPlan.") + group).c_str(), "");
+        if (!chosen.empty()) if (const tp::Plan* p = tp::find(chosen)) if (p->stds & mask) plan = p;
+        if (!plan) plan = tp::defaultPlan(phoneCountry(), mask);
+    }
+    out += "\"plan\":" + quoted(plan ? plan->id : "") + ",\"planName\":" + quoted(plan ? plan->name : "") + ",\"plans\":[";
+    if (mask) {
+        bool first = true;
+        for (const tp::Plan* p : tp::plansFor(mask)) { out += (first ? "" : ",") + ("{\"id\":" + quoted(p->id) + ",\"name\":" + quoted(p->name) + "}"); first = false; }
+    }
+    out += "],\"channels\":[";
+    if (plan) {
+        bool first = true;
+        for (const tp::Channel& c : plan->channels) {
+            if (c.legacy) continue;
+            out += (first ? "" : ",") + ("{\"label\":" + quoted(c.label) + ",\"mhz\":" + textOf(c.centreHz / 1e6) + ",\"bandwidth\":" + textOf(c.bwHz / 1e6) + "}");
+            first = false;
+        }
+    }
+    out += "],\"known\":[";
+    bool first = true;
+    for (const dect2::FreqEntry& e : freqdbForCurrentMode(a)) {
+        out += (first ? "" : ",") + ("{\"mhz\":" + textOf((double)e.hz / 1e6) + ",\"name\":" + quoted(e.name) + ",\"notes\":" + quoted(e.notes) + ",\"region\":" + quoted(e.region) + "}");
+        first = false;
+    }
+    gJson = out + "]}";
+    return gJson.c_str();
+}
+
+void onair_channel_plan_set(const char* planId) {
+    App& a = appRunApp();
+    const char* group = "";
+    if (tvPlanMask(a.family, &group)) plat::prefs().setS((std::string("tvPlan.") + group).c_str(), planId);
+}
+
+void onair_channel_pick(double mhz, double bandwidthMhz) {
+    App& a = appRunApp();
+    if (bandwidthMhz > 0 && (a.family == 0 || a.family == 40)) onair_tv_bandwidth(bandwidthMhz);
+    tuneFreq(a, mhz);
 }
 
 const char* onair_results_json(void) {
@@ -435,8 +598,8 @@ const char* onair_verify_line(void) {
     App& a = appRunApp();
     const std::string json = onair::resultsJson(a.rx, a.engine.running());
     char head[200];
-    snprintf(head, sizeof head, " running=%d std=%d audioSec=%.1f videoFrames=%llu json=", a.engine.running() ? 1 : 0, a.rx.standard, dect2::audioIosPlayedFrames() / 48000.0,
-             (unsigned long long)gVideoFrames);
+    snprintf(head, sizeof head, " running=%d std=%d audioSec=%.1f videoFrames=%llu services=%zu tsPackets=%llu rate=%.2f json=", a.engine.running() ? 1 : 0, a.rx.standard,
+             dect2::audioIosPlayedFrames() / 48000.0, (unsigned long long)gVideoFrames, a.ts.services.size(), (unsigned long long)a.ts.totalPackets, a.engine.sampleRate() / 1e6);
     gJson = head + json.substr(0, 900);
     return gJson.c_str();
 }

@@ -3,6 +3,8 @@ import SwiftUI
 
 enum OnAirFamily {
     static let fm = 5
+    /// DVB-T/T2, ATSC, ATSC 3.0, ISDB-T, DVB-S/S2, DTMB, DVB-C
+    static let television: Set<Int> = [0, 1, 3, 4, 6, 7, 40]
 }
 
 enum Tab: CaseIterable, Identifiable {
@@ -82,6 +84,8 @@ struct RootView: View {
         } else if tab == .mode {
             if receiver.status.family == OnAirFamily.fm {
                 FMRadioPage(receiver: receiver)
+            } else if OnAirFamily.television.contains(receiver.status.family) {
+                TVPage(receiver: receiver)
             } else {
                 ModeResultsPage(receiver: receiver)
             }
@@ -99,10 +103,15 @@ struct RootView: View {
         }
         if let mode = value("--mode") { _ = onair_mode_select_named(mode) }
         if let source = value("--source") { onair_source_select_named(source) }
+        if let bandwidth = value("--bw"), let mhz = Double(bandwidth) { onair_tv_bandwidth(mhz) }
+        if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--start") { receiver.startStop() }
         if args.contains("--mode") {
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
-                MainActor.assumeIsolated { NSLog("OnAirVerify%@", String(cString: onair_verify_line())) }
+                MainActor.assumeIsolated {
+                    NSLog("OnAirVerify%@", String(cString: onair_verify_line()))
+                    if onair_tv_first_service() >= 0 { onair_tv_play(onair_tv_first_service()) }
+                }
             }
         }
     }
@@ -125,8 +134,7 @@ struct RootView: View {
 /// The top of the unit: power, a lit frequency window and the mute key.
 struct StatusStrip: View {
     let receiver: Receiver
-    @State private var typing = false
-    @State private var typed = ""
+    @State private var showDrawer = false
 
     var body: some View {
         ZStack {
@@ -138,8 +146,7 @@ struct StatusStrip: View {
                 .frame(width: 62)
 
                 Button {
-                    typed = String(format: "%.3f", receiver.status.mhz)
-                    typing = true
+                    showDrawer = true
                 } label: {
                     GlassWindow(corner: 6) {
                         Text(String(format: "%.3f MHz", receiver.status.mhz))
@@ -162,12 +169,8 @@ struct StatusStrip: View {
             .padding(.vertical, 7)
         }
         .frame(height: 58)
-        .alert("Frequency", isPresented: $typing) {
-            TextField("MHz", text: $typed).keyboardType(.decimalPad)
-            Button("Tune") {
-                if let mhz = Double(typed.replacingOccurrences(of: ",", with: ".")) { receiver.tune(mhz: mhz) }
-            }
-            Button("Cancel", role: .cancel) {}
+        .sheet(isPresented: $showDrawer) {
+            FrequencyDrawer(receiver: receiver)
         }
     }
 }

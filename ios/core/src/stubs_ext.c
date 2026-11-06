@@ -1,85 +1,7 @@
-/* Stand-ins for the FFmpeg, libusb and libhackrf entry points the core links to. iOS has no USB radios, and FFmpeg is a later step
- * (ios/PLAN.md), so every call fails cleanly with NULL or -1. The scan calls instead succeed and find nothing, which is the truth here: no USB radios. Video and AAC decoding are therefore off until FFmpeg is built for iOS. */
+/* Stand-ins for the libusb and libhackrf entry points the core links to. iOS has no USB radios, so every call fails cleanly with NULL or -1. The scan calls instead succeed and find nothing, which is the truth here: no USB radios. */
 #include <stddef.h>
 #include <stdint.h>
 #define KEEP __attribute__((visibility("default"), used))
-KEEP long av_bsf_free(void) { return -1; }
-KEEP long av_bsf_init(void) { return -1; }
-KEEP long av_bsf_list_parse_str(void) { return -1; }
-KEEP long av_bsf_receive_packet(void) { return -1; }
-KEEP long av_bsf_send_packet(void) { return -1; }
-KEEP long av_buffer_unref(void) { return -1; }
-KEEP long av_channel_layout_copy(void) { return -1; }
-KEEP long av_channel_layout_default(void) { return -1; }
-KEEP long av_channel_layout_uninit(void) { return -1; }
-KEEP long av_dict_free(void) { return -1; }
-KEEP void* av_dict_get(void) { return NULL; }
-KEEP long av_dict_set(void) { return -1; }
-KEEP long av_find_best_stream(void) { return -1; }
-KEEP void* av_find_input_format(void) { return NULL; }
-KEEP void* av_frame_alloc(void) { return NULL; }
-KEEP long av_frame_free(void) { return -1; }
-KEEP long av_frame_get_buffer(void) { return -1; }
-KEEP long av_frame_make_writable(void) { return -1; }
-KEEP long av_frame_unref(void) { return -1; }
-KEEP long av_free(void) { return -1; }
-KEEP long av_freep(void) { return -1; }
-KEEP int64_t av_guess_sample_aspect_ratio(void) { return 0; }
-KEEP long av_interleaved_write_frame(void) { return -1; }
-KEEP int64_t av_log_get_level(void) { return 0; }
-KEEP long av_log_set_level(void) { return -1; }
-KEEP void* av_malloc(void) { return NULL; }
-KEEP void* av_mallocz(void) { return NULL; }
-KEEP long av_new_packet(void) { return -1; }
-KEEP void* av_new_program(void) { return NULL; }
-KEEP void* av_packet_alloc(void) { return NULL; }
-KEEP void* av_packet_clone(void) { return NULL; }
-KEEP long av_packet_free(void) { return -1; }
-KEEP long av_packet_ref(void) { return -1; }
-KEEP long av_packet_rescale_ts(void) { return -1; }
-KEEP long av_packet_unref(void) { return -1; }
-KEEP long av_program_add_stream_index(void) { return -1; }
-KEEP long av_read_frame(void) { return -1; }
-KEEP int64_t av_rescale(void) { return 0; }
-KEEP int64_t av_rescale_q(void) { return 0; }
-KEEP long av_seek_frame(void) { return -1; }
-KEEP long av_strerror(void) { return -1; }
-KEEP long av_write_frame(void) { return -1; }
-KEEP long av_write_trailer(void) { return -1; }
-KEEP void* avcodec_alloc_context3(void) { return NULL; }
-KEEP long avcodec_decode_subtitle2(void) { return -1; }
-KEEP void* avcodec_find_decoder(void) { return NULL; }
-KEEP void* avcodec_find_encoder(void) { return NULL; }
-KEEP void* avcodec_find_encoder_by_name(void) { return NULL; }
-KEEP long avcodec_flush_buffers(void) { return -1; }
-KEEP long avcodec_free_context(void) { return -1; }
-KEEP const char* avcodec_get_name(void) { return "unavailable"; }
-KEEP long avcodec_open2(void) { return -1; }
-KEEP void* avcodec_parameters_alloc(void) { return NULL; }
-KEEP long avcodec_parameters_copy(void) { return -1; }
-KEEP long avcodec_parameters_free(void) { return -1; }
-KEEP long avcodec_parameters_from_context(void) { return -1; }
-KEEP long avcodec_parameters_to_context(void) { return -1; }
-KEEP long avcodec_receive_frame(void) { return -1; }
-KEEP long avcodec_receive_packet(void) { return -1; }
-KEEP long avcodec_send_frame(void) { return -1; }
-KEEP long avcodec_send_packet(void) { return -1; }
-KEEP void* avformat_alloc_context(void) { return NULL; }
-KEEP long avformat_alloc_output_context2(void) { return -1; }
-KEEP long avformat_close_input(void) { return -1; }
-KEEP long avformat_find_stream_info(void) { return -1; }
-KEEP long avformat_free_context(void) { return -1; }
-KEEP void* avformat_new_stream(void) { return NULL; }
-KEEP long avformat_open_input(void) { return -1; }
-KEEP long avformat_write_header(void) { return -1; }
-KEEP void* avio_alloc_context(void) { return NULL; }
-KEEP long avio_close_dyn_buf(void) { return -1; }
-KEEP long avio_closep(void) { return -1; }
-KEEP long avio_context_free(void) { return -1; }
-KEEP long avio_flush(void) { return -1; }
-KEEP long avio_open(void) { return -1; }
-KEEP long avio_open_dyn_buf(void) { return -1; }
-KEEP long avsubtitle_free(void) { return -1; }
 KEEP long hackrf_board_id_read(void) { return -1; }
 KEEP long hackrf_close(void) { return -1; }
 KEEP const char* hackrf_board_id_name(void) { return "unavailable"; }
@@ -129,32 +51,7 @@ KEEP long libusb_kernel_driver_active(void) { return -1; }
 KEEP long libusb_open(void) { return -1; }
 KEEP long libusb_release_interface(void) { return -1; }
 KEEP long libusb_submit_transfer(void) { return -1; }
-KEEP long swr_alloc_set_opts2(void) { return -1; }
-KEEP long swr_convert(void) { return -1; }
-KEEP long swr_free(void) { return -1; }
-KEEP long swr_get_out_samples(void) { return -1; }
-KEEP long swr_init(void) { return -1; }
-KEEP long sws_freeContext(void) { return -1; }
-KEEP void* sws_getCachedContext(void) { return NULL; }
-KEEP void* sws_getCoefficients(void) { return NULL; }
-KEEP void* sws_getContext(void) { return NULL; }
-KEEP long sws_scale(void) { return -1; }
-KEEP long sws_setColorspaceDetails(void) { return -1; }
-KEEP void* av_buffer_ref(void) { return NULL; }
-KEEP long av_hwdevice_ctx_create(void) { return -1; }
-KEEP long av_hwframe_transfer_data(void) { return -1; }
 KEEP long libusb_bulk_transfer(void) { return -1; }
 KEEP long libusb_get_configuration(void) { return -1; }
 KEEP long libusb_get_port_numbers(void) { return -1; }
 KEEP long libusb_set_configuration(void) { return -1; }
-KEEP void* av_audio_fifo_alloc(void) { return NULL; }
-KEEP long av_audio_fifo_free(void) { return -1; }
-KEEP long av_audio_fifo_read(void) { return -1; }
-KEEP long av_audio_fifo_size(void) { return -1; }
-KEEP long av_audio_fifo_write(void) { return -1; }
-KEEP long av_dict_set_int(void) { return -1; }
-KEEP long av_image_copy_plane(void) { return -1; }
-KEEP long av_samples_alloc_array_and_samples(void) { return -1; }
-KEEP long avcodec_get_supported_config(void) { return -1; }
-/* returns a struct of two ints in two registers */
-KEEP long long av_d2q(void) { return 0; }

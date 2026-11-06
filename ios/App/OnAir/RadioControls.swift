@@ -201,9 +201,13 @@ struct EngravedLabel: View {
 struct HardwareKey<Label: View>: View {
     var lit = false
     var led = RadioTheme.amber
+    /// Held down for a moment: runs this instead of the action, like the memory buttons on a car radio.
+    var hold: (() -> Void)?
     let action: () -> Void
     @ViewBuilder let label: Label
     @State private var pressed = false
+    @State private var holdTimer: DispatchWorkItem?
+    @State private var held = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -233,12 +237,24 @@ struct HardwareKey<Label: View>: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
-                    if !pressed { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() }
+                    guard !pressed else { return }
                     pressed = true
+                    held = false
+                    UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                    guard let hold else { return }
+                    let timer = DispatchWorkItem {
+                        held = true
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                        hold()
+                    }
+                    holdTimer = timer
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: timer)
                 }
                 .onEnded { value in
                     pressed = false
-                    if abs(value.translation.width) < 30, abs(value.translation.height) < 30 { action() }
+                    holdTimer?.cancel()
+                    holdTimer = nil
+                    if !held, abs(value.translation.width) < 30, abs(value.translation.height) < 30 { action() }
                 }
         )
     }

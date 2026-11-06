@@ -147,11 +147,11 @@ private struct SettingRow: View {
                         TextField("", value: $number, format: .number)
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(RadioTheme.amber)
-                            .keyboardType(.numbersAndPunctuation)
+                            .keyboardType(row.lo < 0 || row.key == "adsbLat" || row.key == "adsbLon" ? .numbersAndPunctuation : .decimalPad)
                             .multilineTextAlignment(.trailing)
                             .padding(7)
                             .frame(width: 110)
-                            .onSubmit { set(number) }
+                            .onChange(of: number) { _, new in onair_setting_set(row.key, new) }   // a number pad has no return key
                     }
                 }
             }

@@ -525,6 +525,9 @@ if(ANDROID OR IOS)
   # Cross-compiling: the headers found on the build machine are enough to compile; its libraries are not for this CPU. The Android
   # library (android/native) and the iOS library (ios/core) provide the few libusb / FFmpeg entry points themselves.
   target_include_directories(dect2core PRIVATE ${FFMPEG_INCLUDE_DIRS})
+  if(DECT2_FFMPEG_PREFIX)
+    target_include_directories(dect2core PRIVATE ${DECT2_FFMPEG_PREFIX}/include)
+  endif()
 else()
   target_link_directories(dect2core PUBLIC ${LIBUSB_LIBRARY_DIRS})
   target_link_libraries(dect2core PUBLIC ${HACKRF_LIBRARIES} ${LIBUSB_LIBRARIES} PkgConfig::FFMPEG)

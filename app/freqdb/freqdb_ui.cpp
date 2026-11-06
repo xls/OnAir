@@ -507,3 +507,11 @@ void freqdbLabelSource(std::vector<autolabel::Label>& out) {
         out.push_back(std::move(l));
     }
 }
+
+// the database's entries for the mode on screen, for a native list (ios/host)
+std::vector<dect2::FreqEntry> freqdbForCurrentMode(App& a) {
+    load();
+    std::vector<dect2::FreqEntry> out;
+    for (size_t i : dect2::freqForMode(u.all, currentModeKey(a))) out.push_back(u.all[i]);
+    return out;
+}
