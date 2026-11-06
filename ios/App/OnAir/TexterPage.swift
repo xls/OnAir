@@ -22,7 +22,12 @@ struct TexterPage: View {
 
     private var nodes: Results.Table? { results.table(withColumn: "Hardware") ?? results.table(withColumn: "Battery %") }
 
-    private var bubbles: [Bubble] {
+    private var bubbles: [Bubble] { Self.bubbles(in: results) }
+
+    /// What this screen would show, for the sweep.
+    static func shown(_ results: Results) -> String { "bubbles=\(bubbles(in: results).count)" }
+
+    private static func bubbles(in results: Results) -> [Bubble] {
         guard let table = results.tables?.first(where: { $0.column("Text", "Message") != nil && !$0.rows.isEmpty }) else { return [] }
         return table.rows.enumerated().map { index, row in
             Bubble(id: index, from: table.value(row, "From", "RIC", "Address", "Call"), to: table.value(row, "To", "Channel", "Protocol"),
@@ -65,6 +70,8 @@ struct TexterPage: View {
             LazyVStack(alignment: .leading, spacing: 8) {
                 if bubbles.isEmpty {
                     Text(receiver.status.running ? (results.summary ?? "Listening…") : "Press power to start").foregroundStyle(.secondary).padding()
+                    InstrumentGrid(results: results)
+                    InstrumentTables(results: results)
                 }
                 ForEach(bubbles) { bubble in
                     VStack(alignment: .leading, spacing: 3) {

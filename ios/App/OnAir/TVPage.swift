@@ -166,7 +166,7 @@ struct TVPage: View {
                 if isInternet {
                     InternetTVPanel().frame(maxHeight: .infinity)
                 } else {
-                    if !autoMessage.isEmpty {
+                    if !autoMessage.isEmpty && state.width == 0 {
                         Label(autoMessage, systemImage: "waveform.badge.magnifyingglass")
                             .font(.footnote)
                             .foregroundStyle(TV.accent)

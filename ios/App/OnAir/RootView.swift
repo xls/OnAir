@@ -13,12 +13,12 @@ extension OnAirFamily {
     static let hamFamilies: Set<Int> = [25, 34, 36, 37, 95, 113, 116, 119, 140, 205]
     /// DAB, DRM, HD Radio, AM, AM stereo, CDR, shortwave
     static let broadcast: Set<Int> = [2, 10, 21, 55, 107, 22]
-    /// ADS-B, GNSS, sondes, AIS, UAT, FLARM, drones, VDES, APRS, Orbcomm, SARSAT, ASTERIX, Argos, LoRa satellites
-    static let trackers: Set<Int> = [11, 12, 13, 14, 83, 66, 56, 68, 63, 24, 44, 92, 151, 152, 201]
+    /// ADS-B, GNSS, sondes, AIS, UAT, FLARM, drones, VDES, APRS, Orbcomm, SARSAT, ASTERIX, Argos, LoRa satellites, Horus balloons
+    static let trackers: Set<Int> = [11, 12, 13, 14, 83, 66, 56, 68, 63, 24, 44, 92, 151, 152, 156, 201]
     /// DMR, NXDN, P25, dPMR, TETRA, TETRAPOL, trunking, D-STAR, M17, Fusion
     static let twoWay: Set<Int> = [9, 38, 50, 180, 45, 46, 79, 127, 129, 130, 33, 31, 128]
     /// LoRa mesh networks, pagers, aircraft data links, marine text and satellite messages
-    static let messaging: Set<Int> = [20, 23, 75, 15, 16, 17, 18, 27, 35, 82, 76, 81, 146, 147, 204, 141]
+    static let messaging: Set<Int> = [20, 23, 15, 16, 17, 18, 27, 35, 82, 76, 81, 146, 147, 204, 141]
     /// Weather satellites and anything else that decodes pictures
     static let pictures: Set<Int> = [59, 60, 64, 80, 206, 230, 231, 232, 233, 234, 235, 236, 53, 131, 212]
     /// Sensors, networks and cells
@@ -172,7 +172,9 @@ struct RootView: View {
                     NSLog("OnAirVerify%@", String(cString: onair_verify_line()))
                     NSLog("OnAirVerify auto %@ iptv %@", String(cString: onair_auto_message()), String(cString: onair_iptv_json()))
                     if let shown = Results.current() {
-                        NSLog("OnAirVerify shown cards=%d tables=%d rows=%d summary=%@", shown.cards?.count ?? 0, shown.tables?.count ?? 0, shown.tables?.reduce(0) { $0 + $1.rows.count } ?? 0, shown.summary ?? "")
+                        let family = receiver.status.family
+                        let screen = OnAirFamily.trackers.contains(family) ? TrackerPage.shown(shown) : OnAirFamily.messaging.contains(family) ? TexterPage.shown(shown) : OnAirFamily.twoWay.contains(family) ? TwoWayPage.shown(shown) : "-"
+                        NSLog("OnAirVerify shown cards=%d tables=%d rows=%d screen=%@ summary=%@", shown.cards?.count ?? 0, shown.tables?.count ?? 0, shown.tables?.reduce(0) { $0 + $1.rows.count } ?? 0, screen, shown.summary ?? "")
                     } else {
                         NSLog("OnAirVerify shown failed to decode")
                     }
@@ -220,20 +222,25 @@ struct StatusStrip: View {
     let receiver: Receiver
     @State private var showDrawer = false
 
+    /// Internet TV comes over the network: there is no radio to power or tune.
+    private var isStream: Bool { receiver.status.family == OnAirFamily.internetTV }
+
     var body: some View {
         ZStack {
             BrushedMetal(tone: 0.46)
             HStack(spacing: 10) {
-                HardwareKey(lit: receiver.status.running, led: .green, action: receiver.startStop) {
-                    EngravedLabel(text: receiver.status.running ? "STOP" : "POWER", size: 8)
+                if !isStream {
+                    HardwareKey(lit: receiver.status.running, led: .green, action: receiver.startStop) {
+                        EngravedLabel(text: receiver.status.running ? "STOP" : "POWER", size: 8)
+                    }
+                    .frame(width: 62)
                 }
-                .frame(width: 62)
 
                 Button {
                     showDrawer = true
                 } label: {
                     GlassWindow(corner: 6) {
-                        Text(String(format: "%.3f MHz", receiver.status.mhz))
+                        Text(isStream ? "INTERNET" : String(format: "%.3f MHz", receiver.status.mhz))
                             .font(.system(size: 19, weight: .medium, design: .monospaced))
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
@@ -243,6 +250,7 @@ struct StatusStrip: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .disabled(isStream)
 
                 HardwareKey(lit: receiver.status.muted, led: .red, action: { receiver.setMuted(!receiver.status.muted) }) {
                     EngravedLabel(text: "MUTE", size: 8)
@@ -285,11 +293,17 @@ struct BottomBar: View {
     @Binding var tab: Tab
     let modeName: String
 
+    /// A key has room for about a dozen letters: "Internet TV (IPTV)" loses its bracket.
+    private var shortMode: String {
+        guard modeName.count > 12, let bracket = modeName.firstIndex(of: "(") else { return modeName }
+        return modeName[..<bracket].trimmingCharacters(in: .whitespaces)
+    }
+
     private func title(_ item: Tab) -> String {
         switch item {
         case .device: "DEVICE"
         case .spectrum: "SPECTRUM"
-        case .mode: modeName.isEmpty ? "MODE" : modeName.uppercased()
+        case .mode: modeName.isEmpty ? "MODE" : shortMode.uppercased()
         case .settings: "SETTINGS"
         }
     }

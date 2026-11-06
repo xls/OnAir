@@ -697,6 +697,56 @@ void kaws(Out& o, const KawsTelemetry& t) {
     o.table(b);
 }
 
+void multitone(Out& o, const MultitoneTelemetry& t) {
+    o.card("Signal", t.signal ? "carrier up" : "quiet");
+    o.card("SNR", fmt("%.0f dB", t.snrDb));
+    o.card("Level", fmt("%.1f dBFS", t.levelDb));
+    o.card("Transmissions", count(t.txTotal));
+    o.card("Data bursts", count(t.burstTotal));
+    o.card("Valid words", pair(t.blocksOk, t.blocksBad));
+    Table x("Transmissions", {"Time UTC", "Kind", "Seconds", "SNR dB", "Deviation Hz", "Tones"});
+    for (size_t i = 0; i < t.tx.size() && i < kMaxRows; i++) {
+        const MtTx& v = t.tx[i];
+        x.row({hhmmss(v.wall), v.kind, fmt("%.2f", v.durSec), fmt("%.0f", v.snrDb), fmt("%.0f", v.devHz), v.tones});
+    }
+    o.table(x);
+    Table b("Data", {"Time UTC", "Baud", "Standard", "Bits", "Sync", "Valid words", "Verdict"});
+    for (size_t i = 0; i < t.bursts.size() && i < kMaxRows; i++) {
+        const MtBurst& v = t.bursts[i];
+        b.row({hhmmss(v.wall), fmt("%.1f", v.baud), v.nearestStd, std::to_string(v.nBits), v.syncFound ? "yes" : "", fmt("%d / %d", v.validWords, v.totalWords), v.verdict});
+    }
+    o.table(b);
+    Table n("Tones", {"Hz", "Heard", "Seconds"});
+    for (const MtTone& v : t.tones) n.row({fmt("%.1f", v.hz), std::to_string(v.count), fmt("%.1f", v.totalSec)});
+    o.table(n);
+}
+
+void horusBalloons(Out& o, const HorusTelemetry& t) {
+    o.card("Balloons", count(t.payloads.size()));
+    o.card("Packets ok / bad", pair(t.blocksOk, t.blocksBad));
+    o.card("Syncs", count(t.syncs));
+    o.card("SNR", fmt("%.0f dB", t.snrDb));
+    o.card("Level", fmt("%.1f dBFS", t.levelDb));
+    if (!t.payloads.empty()) {
+        const HorusPayload& p = t.payloads.front();
+        o.card("Altitude", fmt("%.0f m", p.last.altM));
+        o.card("Highest", fmt("%.0f m", p.maxAltM));
+        if (p.hasAscent) o.card("Climb", fmt("%+.1f m/s", p.ascentMs));
+        if (p.last.battV > 0) o.card("Battery", fmt("%.2f V", p.last.battV));
+        if (p.last.sats >= 0) o.card("Satellites", std::to_string(p.last.sats));
+    }
+    Table b("Balloons", {"Call", "Lat", "Lon", "Alt m", "Climb m/s", "Packets", "Age s"});
+    for (const HorusPayload& p : t.payloads)
+        b.row({p.callsign, fmt("%.5f", p.last.lat), fmt("%.5f", p.last.lon), fmt("%.0f", p.last.altM), p.hasAscent ? fmt("%+.1f", p.ascentMs) : "", count(p.packets), fmt("%.0f", p.lastHeardS)});
+    o.table(b);
+    Table k("Packets", {"Time UTC", "Call", "Seq", "Alt m", "Speed km/h", "Temp C", "SNR dB"});
+    for (size_t i = 0; i < t.packets.size() && i < kMaxRows; i++) {
+        const horus::Packet& p = t.packets[i];
+        k.row({hhmmss(p.wallTime), p.callsign, std::to_string(p.seq), fmt("%.0f", p.altM), p.speedKmh >= 0 ? std::to_string(p.speedKmh) : "", p.tempC > -128 ? std::to_string(p.tempC) : "", fmt("%.0f", p.snrDb)});
+    }
+    o.table(k);
+}
+
 // ---- television
 
 // ATSC 3.0: the details stay in Engine::atsc3Telemetry and only what every mode shares comes in RxTelemetry
@@ -948,6 +998,8 @@ bool utilityTools(const dect2::RxTelemetry& rx, Out& o) {
     case 126: kaft(o, rx.kaft); return true;
     case 132: kait(o, rx.kait); return true;
     case 134: kaws(o, rx.kaws); return true;
+    case 76: multitone(o, rx.multitone); return true;
+    case 157: horusBalloons(o, rx.horus); return true;
     default: return false;
     }
 }

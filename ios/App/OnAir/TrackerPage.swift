@@ -16,9 +16,10 @@ private struct Target: Identifiable, Equatable {
     static func all(from results: Results) -> [Target] {
         guard let table = results.tables?.first(where: { $0.column("Lat", "Pos", "Position") != nil }) else { return [] }
         return table.rows.compactMap { row in
-            let id = table.value(row, "ICAO", "MMSI", "Callsign", "Id", "Name")
+            // the first filled column names a row of a table that uses none of the usual headings
+            let id = table.value(row, "ICAO", "MMSI", "Callsign", "Call", "Id", "Name").isEmpty ? row.first { !$0.isEmpty } ?? "" : table.value(row, "ICAO", "MMSI", "Callsign", "Call", "Id", "Name")
             guard !id.isEmpty else { return nil }
-            let title = table.value(row, "Callsign", "Name", "Flight", "ICAO", "MMSI")
+            let title = table.value(row, "Callsign", "Call", "Name", "Flight", "ICAO", "MMSI")
             var coordinate: CLLocationCoordinate2D?
             if let lat = Double(table.value(row, "Lat")), let lon = Double(table.value(row, "Lon")) {
                 coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
@@ -27,12 +28,21 @@ private struct Target: Identifiable, Equatable {
                 if parts.count == 2 { coordinate = CLLocationCoordinate2D(latitude: parts[0], longitude: parts[1]) }
             }
             var facts: [String] = []
-            let altitude = table.value(row, "Alt ft"), speed = table.value(row, "Spd kt", "SOG kn", "Speed km/h"), kind = table.value(row, "Type", "Comment")
+            let altitude = table.value(row, "Alt ft"), metres = table.value(row, "Alt m"), speed = table.value(row, "Spd kt", "SOG kn", "Speed km/h"), kind = table.value(row, "Type", "Comment")
             if !altitude.isEmpty { facts.append("\(altitude) ft") }
+            if !metres.isEmpty { facts.append("\(metres) m") }
             if !speed.isEmpty { facts.append("\(speed) \(table.column("Spd kt") != nil ? "kt" : "kn")") }
             if !kind.isEmpty { facts.append(kind) }
             return Target(id: id, title: title.isEmpty ? id : title, detail: facts.joined(separator: " · "), coordinate: coordinate, heading: Double(table.value(row, "Hdg")))
         }
+    }
+}
+
+extension TrackerPage {
+    /// What this screen would show, for the sweep.
+    static func shown(_ results: Results) -> String {
+        let all = Target.all(from: results)
+        return "targets=\(all.count) located=\(all.filter { $0.coordinate != nil }.count)"
     }
 }
 
@@ -100,7 +110,19 @@ struct TrackerPage: View {
                 .mapStyle(.hybrid(elevation: .realistic))
                 header
             }
-            list.frame(maxHeight: 250)
+            if targets.isEmpty {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        if let summary = results.summary { Text(summary).font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
+                        InstrumentGrid(results: results)
+                        InstrumentTables(results: results)
+                    }
+                    .padding(10)
+                }
+                .frame(maxHeight: 250)
+            } else {
+                list.frame(maxHeight: 250)
+            }
         }
         .preferredColorScheme(.dark)
         .onAppear {

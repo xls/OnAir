@@ -9,7 +9,11 @@ struct TwoWayPage: View {
     private static let surface = Color(red: 0.07, green: 0.09, blue: 0.1)
     private static let accent = Color(red: 0.2, green: 0.9, blue: 0.6)
 
-    private var calls: Results.Table? { results.tables?.first { $0.column("Source", "MY") != nil } }
+    private var calls: Results.Table? { Self.calls(in: results) }
+    private static func calls(in results: Results) -> Results.Table? { results.tables?.first { $0.column("Source", "MY") != nil } }
+
+    /// What this screen would show, for the sweep.
+    static func shown(_ results: Results) -> String { "calls=\(calls(in: results)?.rows.count ?? 0)" }
     private var talkgroups: Results.Table? { results.table(withColumn: "Talkgroup") }
     private var latest: [String]? { calls?.rows.first }
 

@@ -29,9 +29,10 @@ while index + 1 < total:
     m = re.search(r'"summary":"((?:[^"\\]|\\.)*)"', last); r["summary"] = m[1][:120] if m else ""
     shown = subprocess.run(["xcrun", "simctl", "spawn", SIM, "log", "show", "--last", "6s", "--predicate", 'process == "OnAir" AND eventMessage CONTAINS "OnAirVerify shown"', "--style", "compact"], capture_output=True, text=True, errors="replace").stdout
     shown = [l for l in shown.splitlines() if "OnAirVerify shown" in l]
-    m = re.search(r'cards=(\d+) tables=(\d+) rows=(\d+) summary=(.*)$', shown[-1]) if shown else None
+    m = re.search(r'cards=(\d+) tables=(\d+) rows=(\d+) screen=(\S*(?: \S+=\d+)?) summary=(.*)$', shown[-1]) if shown else None
     r["decoded"] = bool(m)
     r["cards"], r["tables"], r["rows"] = (int(m[1]), int(m[2]), int(m[3])) if m else (0, 0, 0)
-    if m: r["summary"] = m[4][:120]
+    r["screen"] = m[4] if m else ""
+    if m: r["summary"] = m[5][:120]
     open(out, "a").write(json.dumps(r) + "\n")
-    print(index, r["mode"], r.get("running"), r.get("std"), r["alive"], r["cards"], r["rows"], r["summary"][:50], flush=True)
+    print(index, r["mode"], r.get("running"), r.get("std"), r["alive"], r["cards"], r["rows"], r["screen"], r["summary"][:50], flush=True)
