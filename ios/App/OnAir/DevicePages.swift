@@ -7,24 +7,28 @@ struct SourcePage: View {
     @State private var showAdd = false
 
     var body: some View {
-        List {
-            Section {
+        PanelPage {
+            PanelSection(title: "Source") {
                 ForEach(Array(receiver.devices.enumerated()), id: \.offset) { index, name in
                     Button {
                         onair_device_select(Int32(index))
                         receiver.refresh()
                     } label: {
-                        HStack {
-                            Text(name).foregroundStyle(.primary)
-                            Spacer()
-                            if name == receiver.status.source { Image(systemName: "checkmark") }
+                        PanelRow(label: name) {
+                            Circle()
+                                .fill(name == receiver.status.source ? Color.green : Color(white: 0.18))
+                                .frame(width: 10, height: 10)
+                                .shadow(color: name == receiver.status.source ? .green : .clear, radius: 5)
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            Section {
-                Button("Add network radio", systemImage: "plus") { showAdd = true }
+            HardwareKey(action: { showAdd = true }) {
+                EngravedLabel(text: "ADD NETWORK RADIO", size: 9)
             }
+            .frame(height: 50)
         }
         .sheet(isPresented: $showAdd) {
             RadioSheet()
@@ -57,28 +61,38 @@ struct ModeBrowser: View {
     }
 
     var body: some View {
-        List {
+        PanelPage {
+            GlassWindow(corner: 6) {
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(RadioTheme.amber)
+                    TextField("", text: $query, prompt: Text("SEARCH MODES").foregroundStyle(RadioTheme.amber.opacity(0.4)))
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(RadioTheme.amber)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                .padding(9)
+            }
             ForEach(groups, id: \.0) { group, rows in
-                Section(group) {
+                PanelSection(title: group) {
                     ForEach(rows) { row in
                         Button {
                             onair_mode_select(row.id)
                             receiver.refresh()
                             onPick()
                         } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(row.name).foregroundStyle(.primary)
-                                    Text(row.blurb).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                }
-                                Spacer()
-                                if onair_mode_is_selected(row.id) { Image(systemName: "checkmark") }
+                            PanelRow(label: row.name, help: row.blurb) {
+                                Circle()
+                                    .fill(onair_mode_is_selected(row.id) ? Color.green : Color(white: 0.18))
+                                    .frame(width: 10, height: 10)
+                                    .shadow(color: onair_mode_is_selected(row.id) ? .green : .clear, radius: 5)
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search modes")
     }
 }

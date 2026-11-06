@@ -95,6 +95,11 @@ int onair_fm_rds_symbols(float* xy, int maxPoints);              // recent RDS s
 // the active mode's decoded results: summary, cards and tables
 const char* onair_results_json(void);
 
+// testing from the Mac: pick a mode by name and a source ("test", or the first network radio), and one line of what the decoder produced
+bool onair_mode_select_named(const char* name);
+void onair_source_select_named(const char* source);
+const char* onair_verify_line(void);
+
 // state for the native strip: running, mhz, mode, source, volume, muted
 const char* onair_status_json(void);
 

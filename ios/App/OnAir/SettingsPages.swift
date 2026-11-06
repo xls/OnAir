@@ -1,3 +1,5 @@
+import AVFoundation
+import AVKit
 import OnAirCore
 import SwiftUI
 
@@ -6,7 +8,7 @@ private func decode<T: Decodable>(_ type: T.Type, _ text: UnsafePointer<CChar>?)
     return try? JSONDecoder().decode(type, from: Data(String(cString: text).utf8))
 }
 
-/// Every setting OnAir has that applies here, generated from its settings table. A new upstream setting appears on its own.
+/// The settings that apply on iPhone, generated from OnAir's settings table.
 struct SettingsPage: View {
     struct Row: Decodable, Identifiable {
         var id: String { key }
@@ -21,6 +23,7 @@ struct SettingsPage: View {
     let only: String?
     @State private var rows: [Row] = []
     @State private var query = ""
+    @State private var outputName = ""
 
     private var shown: [Row] {
         rows.filter { row in
@@ -34,20 +37,55 @@ struct SettingsPage: View {
     }
 
     var body: some View {
-        List {
+        PanelPage {
+            if only == nil {
+                GlassWindow(corner: 6) {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundStyle(RadioTheme.amber)
+                        TextField("", text: $query, prompt: Text("SEARCH SETTINGS").foregroundStyle(RadioTheme.amber.opacity(0.4)))
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(RadioTheme.amber)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    .padding(9)
+                }
+            }
+            if only == nil {
+                PanelSection(title: "Sound output") {
+                    PanelRow(label: "Output", help: outputName) {
+                        SoundRoutePicker().frame(width: 44, height: 44)
+                    }
+                }
+            }
             ForEach(categories, id: \.self) { category in
-                Section(only == nil ? category : "") {
+                PanelSection(title: only == nil ? category : "") {
                     ForEach(shown.filter { $0.category == category }) { row in
                         SettingRow(row: row) { load() }
                     }
                 }
             }
         }
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search settings")
         .onAppear(perform: load)
     }
 
-    private func load() { rows = decode([Row].self, onair_settings_json()) ?? [] }
+    private func load() {
+        rows = decode([Row].self, onair_settings_json()) ?? []
+        outputName = AVAudioSession.sharedInstance().currentRoute.outputs.first?.portName ?? ""
+    }
+}
+
+/// Apple's own list of outputs: speaker, headphones, Bluetooth, AirPlay.
+private struct SoundRoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.tintColor = UIColor(RadioTheme.amber)
+        view.activeTintColor = UIColor(RadioTheme.amber)
+        view.prioritizesVideoDevices = false
+        return view
+    }
+
+    func updateUIView(_ view: AVRoutePickerView, context: Context) {}
 }
 
 private struct SettingRow: View {
@@ -67,36 +105,54 @@ private struct SettingRow: View {
     @ViewBuilder private var control: some View {
         switch row.kind {
         case "bool":
-            Toggle(row.label, isOn: Binding(get: { row.value != 0 }, set: { set($0 ? 1 : 0) }))
+            PanelRow(label: row.label) {
+                RockerSwitch(isOn: Binding(get: { row.value != 0 }, set: { set($0 ? 1 : 0) }))
+            }
         case "choice":
-            Picker(row.label, selection: Binding(get: { Int(row.value) }, set: { set(Double($0)) })) {
-                ForEach(Array(row.choices.enumerated()), id: \.offset) { index, name in Text(name).tag(index) }
+            PanelRow(label: row.label) {
+                SelectorWindow(selected: row.choices.indices.contains(Int(row.value)) ? row.choices[Int(row.value)] : "", options: row.choices) { set(Double($0)) }
             }
         case "text":
-            LabeledContent(row.label) {
-                TextField("", text: $text)
-                    .multilineTextAlignment(.trailing)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onSubmit {
-                        onair_setting_set_text(row.key, text)
-                        changed()
-                    }
+            PanelRow(label: row.label) {
+                GlassWindow(corner: 4) {
+                    TextField("", text: $text)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(RadioTheme.amber)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(7)
+                        .frame(width: 150)
+                        .onSubmit {
+                            onair_setting_set_text(row.key, text)
+                            changed()
+                        }
+                }
             }
         default:
             if row.hi > row.lo {
-                VStack(alignment: .leading) {
-                    LabeledContent(row.label, value: row.kind == "int" ? String(Int(number)) : String(format: "%.2f", number))
-                    Slider(value: $number, in: row.lo...row.hi, step: row.kind == "int" ? 1 : (row.hi - row.lo) / 200) { editing in
-                        if !editing { set(number) }
+                VStack(spacing: 0) {
+                    PanelRow(label: row.label) {
+                        Text(row.kind == "int" ? String(Int(number)) : String(format: "%.2f", number))
+                            .font(.system(size: 13, weight: .medium, design: .monospaced))
+                            .foregroundStyle(RadioTheme.amber)
                     }
+                    Fader(value: $number, range: row.lo...row.hi, step: row.kind == "int" ? 1 : 0) { set(number) }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 4)
                 }
             } else {
-                LabeledContent(row.label) {
-                    TextField("", value: $number, format: .number)
-                        .keyboardType(.numbersAndPunctuation)
-                        .multilineTextAlignment(.trailing)
-                        .onSubmit { set(number) }
+                PanelRow(label: row.label) {
+                    GlassWindow(corner: 4) {
+                        TextField("", value: $number, format: .number)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(RadioTheme.amber)
+                            .keyboardType(.numbersAndPunctuation)
+                            .multilineTextAlignment(.trailing)
+                            .padding(7)
+                            .frame(width: 110)
+                            .onSubmit { set(number) }
+                    }
                 }
             }
         }
@@ -122,32 +178,36 @@ struct GainPage: View {
     @SwiftUI.State private var db = 0.0
 
     var body: some View {
-        List {
+        PanelPage {
             if let state, state.radio {
-                Section("Gain") {
+                PanelSection(title: "Gain") {
                     if state.generic {
-                        VStack(alignment: .leading) {
-                            LabeledContent("Gain", value: "\(Int(db)) dB")
-                            Slider(value: $db, in: state.lo...state.hi, step: 1) { editing in
-                                if !editing {
-                                    onair_gain_set(db)
-                                    load()
-                                }
-                            }
+                        PanelRow(label: "Gain") {
+                            Text("\(Int(db)) dB").font(.system(size: 15, weight: .medium, design: .monospaced)).foregroundStyle(RadioTheme.amber)
                         }
+                        Fader(value: $db, range: state.lo...state.hi, step: 1) {
+                            onair_gain_set(db)
+                            load()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 4)
                     }
-                    Toggle("Automatic gain", isOn: Binding(get: { state.agc }, set: { onair_agc_set($0); load() }))
+                    PanelRow(label: "Automatic gain") {
+                        RockerSwitch(isOn: Binding(get: { state.agc }, set: { onair_agc_set($0); load() }))
+                    }
                 }
-                Section("Corrections") {
-                    Picker("DC spike", selection: Binding(get: { state.dc }, set: { onair_dc_mode_set(Int32($0)); load() })) {
-                        Text("Leave").tag(0)
-                        Text("Remove").tag(1)
-                        Text("Tune beside it").tag(2)
+                PanelSection(title: "Corrections") {
+                    PanelRow(label: "DC spike") {
+                        SelectorWindow(selected: ["Leave", "Remove", "Tune beside it"][min(max(state.dc, 0), 2)], options: ["Leave", "Remove", "Tune beside it"]) { onair_dc_mode_set(Int32($0)); load() }
                     }
-                    Toggle("IQ correction", isOn: Binding(get: { state.iq }, set: { onair_iq_fix_set($0); load() }))
+                    PanelRow(label: "IQ correction") {
+                        RockerSwitch(isOn: Binding(get: { state.iq }, set: { onair_iq_fix_set($0); load() }))
+                    }
                 }
             } else {
-                Text("Gain applies to radios. Choose one under Source.").foregroundStyle(.secondary)
+                PanelSection(title: "Gain") {
+                    PanelRow(label: "Gain applies to radios", help: "Choose a radio under Source.") { EmptyView() }
+                }
             }
         }
         .onAppear(perform: load)
@@ -172,15 +232,14 @@ struct RadioSettingsPage: View {
     @State private var numbers: [String: Double] = [:]
 
     var body: some View {
-        List {
+        PanelPage {
             if rows.isEmpty {
-                Text("This source has no settings of its own.").foregroundStyle(.secondary)
-            }
-            ForEach(rows) { row in
-                Section {
-                    control(row)
-                } footer: {
-                    if !row.help.isEmpty { Text(row.help) }
+                PanelSection(title: "Radio") {
+                    PanelRow(label: "No settings", help: "This source has no settings of its own.") { EmptyView() }
+                }
+            } else {
+                PanelSection(title: "Radio") {
+                    ForEach(rows) { row in control(row) }
                 }
             }
         }
@@ -190,19 +249,24 @@ struct RadioSettingsPage: View {
     @ViewBuilder private func control(_ row: Row) -> some View {
         switch row.kind {
         case "bool":
-            Toggle(row.label, isOn: Binding(get: { row.value == "1" }, set: { set(row, $0 ? "1" : "0") }))
+            PanelRow(label: row.label, help: row.help) {
+                RockerSwitch(isOn: Binding(get: { row.value == "1" }, set: { set(row, $0 ? "1" : "0") }))
+            }
         case "choice":
-            Picker(row.label, selection: Binding(get: { row.value }, set: { set(row, $0) })) {
-                ForEach(Array(row.values.enumerated()), id: \.offset) { index, value in Text(row.names[index]).tag(value) }
+            PanelRow(label: row.label, help: row.help) {
+                let index = row.values.firstIndex(of: row.value) ?? 0
+                SelectorWindow(selected: row.names.indices.contains(index) ? row.names[index] : row.value, options: row.names) { set(row, row.values[$0]) }
             }
         default:
             let number = Binding(get: { numbers[row.key] ?? Double(row.value) ?? row.lo }, set: { numbers[row.key] = $0 })
-            VStack(alignment: .leading) {
-                LabeledContent(row.label, value: String(format: "%g %@", number.wrappedValue, row.unit))
+            VStack(spacing: 0) {
+                PanelRow(label: row.label, help: row.help) {
+                    Text(String(format: "%g %@", number.wrappedValue, row.unit)).font(.system(size: 13, design: .monospaced)).foregroundStyle(RadioTheme.amber)
+                }
                 if row.hi > row.lo {
-                    Slider(value: number, in: row.lo...row.hi) { editing in
-                        if !editing { set(row, String(number.wrappedValue)) }
-                    }
+                    Fader(value: number, range: row.lo...row.hi, step: row.step) { set(row, String(number.wrappedValue)) }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 4)
                 }
             }
         }

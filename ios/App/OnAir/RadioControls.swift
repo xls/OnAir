@@ -346,3 +346,162 @@ struct TuningKnob: View {
         }
     }
 }
+
+/// A recessed section of the panel with an engraved heading.
+struct PanelSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !title.isEmpty { EngravedLabel(text: title.uppercased(), size: 10).padding(.leading, 4) }
+            VStack(spacing: 0) { content }
+                .background(Color.black.opacity(0.62))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LinearGradient(colors: [.black, .white.opacity(0.3)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+        }
+    }
+}
+
+/// One line inside a section: amber label on the left, the control on the right.
+struct PanelRow<Control: View>: View {
+    let label: String
+    var help = ""
+    @ViewBuilder let control: Control
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).font(.system(size: 14, weight: .medium, design: .rounded)).foregroundStyle(RadioTheme.amber)
+                if !help.isEmpty {
+                    Text(help).font(.system(size: 10, design: .rounded)).foregroundStyle(RadioTheme.amber.opacity(0.55)).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 6)
+            control
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(minHeight: 48)
+    }
+}
+
+/// A two-position rocker that tilts with a clunk.
+struct RockerSwitch: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+            isOn.toggle()
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 4).fill(Color.black)
+                HStack(spacing: 0) {
+                    ZStack {
+                        LinearGradient(colors: isOn ? [Color(white: 0.16), Color(white: 0.28)] : [Color(white: 0.5), Color(white: 0.3)], startPoint: .leading, endPoint: .trailing)
+                        Text("O").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(Color(white: isOn ? 0.5 : 0.05))
+                    }
+                    ZStack {
+                        LinearGradient(colors: isOn ? [Color(white: 0.3), Color(white: 0.5)] : [Color(white: 0.28), Color(white: 0.16)], startPoint: .leading, endPoint: .trailing)
+                        Capsule().fill(isOn ? RadioTheme.amber : Color(white: 0.5)).frame(width: 2, height: 10).shadow(color: isOn ? RadioTheme.amber : .clear, radius: 4)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .padding(2)
+            }
+            .frame(width: 58, height: 30)
+            .animation(.easeOut(duration: 0.08), value: isOn)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A studio fader: a metal cap in a slot, with a tick at each step.
+struct Fader: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step = 0.0
+    let finished: () -> Void
+    @State private var haptics = DetentHaptics()
+
+    private var fraction: Double { (value - range.lowerBound) / max(range.upperBound - range.lowerBound, 1e-9) }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let capWidth: CGFloat = 30, travel = geometry.size.width - capWidth
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.black).frame(height: 7)
+                    .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 0.6).offset(y: 0.6))
+                Capsule().fill(RadioTheme.amber.opacity(0.85)).frame(width: capWidth / 2 + travel * fraction, height: 3).padding(.leading, 2)
+                    .shadow(color: RadioTheme.amber, radius: 3)
+                ZStack {
+                    Rectangle().colorEffect(ShaderLibrary.brushedMetal(.float2(capWidth, 34), TiltLight.shared.vector, .float(0.66)))
+                    Rectangle().fill(Color.black).frame(width: 2)
+                }
+                .frame(width: capWidth, height: 34)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(LinearGradient(colors: [.white.opacity(0.55), .black.opacity(0.7)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                .shadow(color: .black, radius: 3, y: 2)
+                .offset(x: travel * fraction)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0).onChanged { drag in
+                    let f = min(max((drag.location.x - capWidth / 2) / travel, 0), 1)
+                    var new = range.lowerBound + Double(f) * (range.upperBound - range.lowerBound)
+                    if step > 0 { new = (new / step).rounded() * step }
+                    if new != value {
+                        if step > 0 { haptics.tick() }
+                        value = new
+                    }
+                }
+                .onEnded { _ in finished() }
+            )
+        }
+        .frame(height: 40)
+    }
+}
+
+/// A lit value window that opens a list of choices.
+struct SelectorWindow: View {
+    let selected: String
+    let options: [String]
+    let choose: (Int) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(Array(options.enumerated()), id: \.offset) { index, name in
+                Button(name) { choose(index) }
+            }
+        } label: {
+            GlassWindow(corner: 4) {
+                HStack(spacing: 6) {
+                    Text(selected).font(.system(size: 12, weight: .medium, design: .monospaced)).lineLimit(1).minimumScaleFactor(0.7)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9))
+                }
+                .foregroundStyle(RadioTheme.amber)
+                .padding(.horizontal, 9)
+                .frame(minWidth: 96, minHeight: 30)
+            }
+            .fixedSize()
+        }
+    }
+}
+
+/// A brushed plate that scrolls, for pages full of settings.
+struct PanelPage<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ZStack {
+            BrushedMetal(tone: 0.46)
+            ScrollView {
+                VStack(spacing: 16) { content }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 14)
+            }
+        }
+    }
+}

@@ -51,7 +51,7 @@ struct RootView: View {
             if !started {
                 started = true
                 onair_set_page(ONAIR_PAGE_NONE)
-                if ProcessInfo.processInfo.arguments.contains("--start") { receiver.startStop() }
+                applyTestArguments()
             }
             receiver.refresh()
         }
@@ -87,6 +87,23 @@ struct RootView: View {
             }
         } else if tab == .settings {
             SettingsPage(only: nil)
+        }
+    }
+
+    /// `--mode <name> --source test --start` pick what to run at launch; the status then goes to the log. Used by tools/verify_mode.sh.
+    private func applyTestArguments() {
+        let args = ProcessInfo.processInfo.arguments
+        func value(_ name: String) -> String? {
+            guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        if let mode = value("--mode") { _ = onair_mode_select_named(mode) }
+        if let source = value("--source") { onair_source_select_named(source) }
+        if args.contains("--start") { receiver.startStop() }
+        if args.contains("--mode") {
+            Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+                MainActor.assumeIsolated { NSLog("OnAirVerify%@", String(cString: onair_verify_line())) }
+            }
         }
     }
 

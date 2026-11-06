@@ -14,6 +14,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #include <cfloat>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -22,7 +23,7 @@ namespace gfx { void setHostLayer(CAMetalLayer* layer); void setBackground(bool 
 namespace power { void setHostOccluded(bool on); }                                     // ios/platform/power_ios.mm
 void routeTab(App& a, const std::string& name);                                     // ui/main_tabs.cpp
 
-namespace dect2 { void audioIosRecent(float* stereo, int frames); }                   // audioout_ios.mm
+namespace dect2 { void audioIosRecent(float* stereo, int frames); uint64_t audioIosPlayedFrames(); }                   // audioout_ios.mm
 bool settingsIsBound(const settings::Info& i);                                       // ui/settings_window.cpp
 settings::Val settingsRead(App& a, const settings::Info& i);
 void settingsWrite(App& a, const settings::Info& i, const settings::Val& v);
@@ -32,12 +33,17 @@ constexpr int kFamilyFm = 5;
 OnAirPage gPage = ONAIR_PAGE_TOUCH_SHELL;
 bool gBackground = false, gStarted = false;
 std::string gStatus, gJson;
+uint64_t gVideoFrames = 0;
 
 std::string quoted(const std::string& s) { return "\"" + dect2::jsonEscape(s) + "\""; }
 std::string textOf(double v) { return dect2::jsonNum(v); }
 
-// settings with no meaning on iOS
-bool settingHidden(const settings::Info& i) { return i.cat == settings::kPlugins || i.cat == settings::kNetwork; }
+// The settings that do something in this app. An allow-list: most of the table is about desktop windows, themes, updates and programs that do not exist here
+bool settingHidden(const settings::Info& i) {
+    static const std::set<std::string> shown = {"powerLowMode", "wfMap3", "bwAuto", "subsOn", "recFormat", "fmMono", "fmStereo", "fmDeemph", "fmRegion", "fmSquelch",
+                                                "ttxPage", "tvLang", "adsbLat", "adsbLon"};
+    return !shown.count(i.key);
+}
 
 const settings::Info* settingByKey(const char* key) {
     for (const settings::Info& i : settings::table()) if (!strcmp(i.key, key)) return &i;
@@ -290,7 +296,7 @@ const char* onair_fm_json(void) {
     const auto& f = appRunApp().rx.fm;
     gJson = "{\"state\":" + std::to_string(f.state) + ",\"station\":" + quoted(f.psName) + ",\"text\":" + quoted(f.radioText) + ",\"programme\":" + quoted(f.ptyText) +
             ",\"stereo\":" + (f.stereo ? "true" : "false") + ",\"snrDb\":" + textOf(f.snrDb) + ",\"levelDbfs\":" + textOf(f.levelDbfs) + ",\"rds\":" + (f.rdsSync ? "true" : "false") +
-            ",\"rdsOk\":" + textOf(f.rdsBlockOkPct) + ",\"traffic\":" + (f.trafficProgram ? "true" : "false") + "}";
+            ",\"rdsOk\":" + textOf(f.rdsBlockOkPct) + ",\"traffic\":" + (f.trafficProgram ? "true" : "false") + ",\"devKhz\":" + textOf(f.devKhz) + ",\"multipath\":" + textOf(f.multipathPct) + ",\"pilot\":" + textOf(f.pilotPct) + "}";
     return gJson.c_str();
 }
 
@@ -406,6 +412,33 @@ void onair_radio_setting_set(const char* key, const char* value) {
         if (r.restart) startReceiver(a); else a.engine.retune(a.tune);
         return;
     }
+}
+
+bool onair_mode_select_named(const char* name) {
+    App& a = appRunApp();
+    for (const auto& m : allModes()) {
+        if (strcasecmp(m.name, name) && !(m.sub && !strcasecmp(m.sub, name))) continue;
+        selectMode(a, m.family, m.subId);
+        return true;
+    }
+    return false;
+}
+
+void onair_source_select_named(const char* source) {
+    App& a = appRunApp();
+    const bool test = !strcmp(source, "test");
+    for (int i = 0; i < (int)a.devices.size(); i++)
+        if (test ? a.devices[(size_t)i].kind == DeviceInfo::Synthetic : a.devices[(size_t)i].isNetwork()) { a.devIdx = i; return; }
+}
+
+const char* onair_verify_line(void) {
+    App& a = appRunApp();
+    const std::string json = onair::resultsJson(a.rx, a.engine.running());
+    char head[200];
+    snprintf(head, sizeof head, " running=%d std=%d audioSec=%.1f videoFrames=%llu json=", a.engine.running() ? 1 : 0, a.rx.standard, dect2::audioIosPlayedFrames() / 48000.0,
+             (unsigned long long)gVideoFrames);
+    gJson = head + json.substr(0, 900);
+    return gJson.c_str();
 }
 
 const char* onair_status_json(void) {

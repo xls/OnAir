@@ -271,8 +271,18 @@ struct SpectrumPage: View {
         // three equal parts: the trace and the waterfall share the top two thirds, the scopes have the rest and take no tuning gestures
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                spectrumArea(width: geometry.size.width)
-                    .frame(height: geometry.size.height * 2 / 3)
+                // a bezel around the screen, as on a bench analyser
+                ZStack {
+                    BrushedMetal(tone: 0.46)
+                    GlassWindow(corner: 8) {
+                        GeometryReader { screen in
+                            spectrumArea(width: screen.size.width)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                }
+                .frame(height: geometry.size.height * 2 / 3)
                 ScopePanel(isFM: receiver.status.family == OnAirFamily.fm, running: receiver.status.running)
                     .frame(height: geometry.size.height / 3)
             }

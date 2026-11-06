@@ -3,9 +3,9 @@ import OnAirCore
 import SwiftUI
 
 enum Scope: String, CaseIterable, Identifiable {
-    case audio = "AUDIO", oscilloscope = "SCOPE", goniometer = "X-Y", multiplex = "MPX", rds = "RDS"
+    case audio = "AUDIO", levels = "L / R", audioWaterfall = "AUDIO WF", oscilloscope = "SCOPE", goniometer = "X-Y", deviation = "DEVIATION", multiplex = "MPX", rds = "RDS"
     var id: Self { self }
-    var needsFM: Bool { self == .multiplex || self == .rds }
+    var needsFM: Bool { self == .multiplex || self == .rds || self == .deviation }
 }
 
 /// Turns the last moment of sound into band levels, on a musical (log) frequency scale.
@@ -24,6 +24,18 @@ private final class AudioAnalyser {
     }
 
     deinit { vDSP_destroy_fftsetup(setup) }
+
+    static let historyRows = 40
+    private(set) var history: [[Float]] = []
+    private var peaks: [Float] = [0, 0]
+
+    func pushHistory(_ row: [Float]) {
+        history.insert(row, at: 0)
+        if history.count > Self.historyRows { history.removeLast() }
+    }
+
+    func holdPeak(_ channel: Int, _ level: Float) { peaks[channel] = max(level, peaks[channel] - 0.006) }
+    func peak(_ channel: Int) -> Float { peaks[channel] }
 
     /// Levels 0...1. They rise at once and fall slowly, like the LEDs of a real analyser.
     func bands(_ mono: [Float], count: Int) -> [Float] {
@@ -114,6 +126,9 @@ private struct ScopeWindow: View {
     private func draw(in context: GraphicsContext, size: CGSize) {
         switch scope {
         case .audio: drawAnalyser(context, size)
+        case .levels: drawLevels(context, size)
+        case .audioWaterfall: drawAudioWaterfall(context, size)
+        case .deviation: drawDeviation(context, size)
         case .oscilloscope: drawOscilloscope(context, size)
         case .goniometer: drawGoniometer(context, size)
         case .multiplex: drawMultiplex(context, size)
@@ -155,6 +170,68 @@ private struct ScopeWindow: View {
                 let colour: Color = segment >= 12 ? .red : segment >= 9 ? RadioTheme.amber : .green
                 let rect = CGRect(x: CGFloat(band) * columnWidth + 1, y: size.height - CGFloat(segment + 1) * rowHeight + 1, width: columnWidth - 2, height: rowHeight - 2)
                 context.fill(Path(rect), with: .color(colour.opacity(segment < lit ? 0.95 : 0.07)))
+            }
+        }
+    }
+
+    /// Left and right as LED ladders with a peak marker that hangs for a moment.
+    private func drawLevels(_ context: GraphicsContext, _ size: CGSize) {
+        let stereo = recent(1024)
+        let left = stride(from: 0, to: 2048, by: 2).map { stereo[$0] }, right = stride(from: 1, to: 2048, by: 2).map { stereo[$0] }
+        let channels = [(left, "L"), (right, "R")]
+        let segments = 24, gap: CGFloat = 8, height = (size.height - gap * 3) / 2
+        for (index, channel) in channels.enumerated() {
+            let db = 20 * log10(max(vDSP.rootMeanSquare(channel.0), 1e-6))
+            let level = Float(min(max((db + 48) / 48, 0), 1))
+            analyser.holdPeak(index, level)
+            let top = gap + CGFloat(index) * (height + gap)
+            context.draw(Text(channel.1).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(RadioTheme.amber), at: CGPoint(x: 8, y: top + height / 2))
+            let start: CGFloat = 17, width = (size.width - start - 4) / CGFloat(segments)
+            for segment in 0..<segments {
+                let fraction = Float(segment) / Float(segments)
+                let colour: Color = fraction > 0.85 ? .red : fraction > 0.65 ? RadioTheme.amber : .green
+                let peak = Int(analyser.peak(index) * Float(segments)) == segment
+                let lit = fraction < level || peak
+                context.fill(Path(CGRect(x: start + CGFloat(segment) * width, y: top, width: width - 2, height: height)), with: .color(colour.opacity(lit ? 0.95 : 0.07)))
+            }
+        }
+    }
+
+    /// Tones over time, newest at the top.
+    private func drawAudioWaterfall(_ context: GraphicsContext, _ size: CGSize) {
+        let stereo = recent(AudioAnalyser.frames)
+        let mono = (0..<AudioAnalyser.frames).map { (stereo[$0 * 2] + stereo[$0 * 2 + 1]) / 2 }
+        analyser.pushHistory(analyser.bands(mono, count: 48))
+        let rows = analyser.history, rowHeight = size.height / CGFloat(max(AudioAnalyser.historyRows, 1)), columnWidth = size.width / 48
+        for (y, row) in rows.enumerated() {
+            for (x, level) in row.enumerated() where level > 0.04 {
+                let colour = Color(hue: Double(0.62 - level * 0.62), saturation: 1, brightness: Double(min(level * 1.6, 1)))
+                context.fill(Path(CGRect(x: CGFloat(x) * columnWidth, y: CGFloat(y) * rowHeight, width: columnWidth + 0.5, height: rowHeight + 0.5)), with: .color(colour))
+            }
+        }
+    }
+
+    /// FM deviation against the 75 kHz limit, with pilot and multipath.
+    private func drawDeviation(_ context: GraphicsContext, _ size: CGSize) {
+        struct FM: Decodable { var devKhz = 0.0, multipath = 0.0, pilot = 0.0 }
+        guard let text = onair_fm_json(), let fm = try? JSONDecoder().decode(FM.self, from: Data(String(cString: text).utf8)) else { return }
+        let rows: [(String, Double, Double, String)] = [("DEV", fm.devKhz, 100, String(format: "%.0f kHz", fm.devKhz)),
+                                                        ("PILOT", fm.pilot, 15, String(format: "%.1f %%", fm.pilot)),
+                                                        ("MULTI", fm.multipath, 30, String(format: "%.1f %%", fm.multipath))]
+        let rowHeight = size.height / 3
+        for (index, row) in rows.enumerated() {
+            let y = CGFloat(index) * rowHeight
+            context.draw(Text(row.0).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(RadioTheme.amber), at: CGPoint(x: 6, y: y + 9), anchor: .leading)
+            context.draw(Text(row.3).font(.system(size: 9, weight: .regular, design: .monospaced)).foregroundStyle(RadioTheme.amber), at: CGPoint(x: size.width - 6, y: y + 9), anchor: .trailing)
+            let bar = CGRect(x: 6, y: y + 18, width: size.width - 12, height: rowHeight - 25)
+            context.fill(Path(bar), with: .color(.green.opacity(0.08)))
+            let fraction = min(row.1 / row.2, 1)
+            context.fill(Path(CGRect(x: bar.minX, y: bar.minY, width: bar.width * fraction, height: bar.height)), with: .color(index == 0 && row.1 > 75 ? .red : .green))
+            if index == 0 {
+                var limit = Path()
+                limit.move(to: CGPoint(x: bar.minX + bar.width * 0.75, y: bar.minY - 2))
+                limit.addLine(to: CGPoint(x: bar.minX + bar.width * 0.75, y: bar.maxY + 2))
+                context.stroke(limit, with: .color(RadioTheme.amber), lineWidth: 1)
             }
         }
     }
