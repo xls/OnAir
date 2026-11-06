@@ -148,6 +148,12 @@ struct RootView: View {
             return args[i + 1]
         }
         if let mode = value("--mode") { _ = onair_mode_select_named(mode) }
+        var label = value("--mode") ?? ""
+        if let index = value("--mode-index").flatMap(Int32.init), index < onair_mode_count() {
+            onair_mode_select(index)
+            label = String(cString: onair_mode_name(index))
+            NSLog("OnAirVerify index %d of %d is %@ family %d group %@", index, onair_mode_count(), label, onair_mode_family(index), String(cString: onair_mode_group(index)))
+        }
         if let source = value("--source") { onair_source_select_named(source) }
         if let bandwidth = value("--bw"), let mhz = Double(bandwidth) { onair_tv_bandwidth(mhz) }
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
@@ -155,10 +161,15 @@ struct RootView: View {
         if args.contains("--start") { receiver.startStop() }
         if let file = value("--ts") { onair_tv_play_file(file) }
         if let path = value("--tx-file") { transmitToFile(path, mode: value("--mode") ?? "") }
-        if args.contains("--mode") {
+        if !label.isEmpty {
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
                 MainActor.assumeIsolated {
                     NSLog("OnAirVerify%@", String(cString: onair_verify_line()))
+                    if let shown = Results.current() {
+                        NSLog("OnAirVerify shown cards=%d tables=%d rows=%d summary=%@", shown.cards?.count ?? 0, shown.tables?.count ?? 0, shown.tables?.reduce(0) { $0 + $1.rows.count } ?? 0, shown.summary ?? "")
+                    } else {
+                        NSLog("OnAirVerify shown failed to decode")
+                    }
                     if onair_tv_first_service() >= 0 { onair_tv_play(onair_tv_first_service()) }
                     if !autoSelected, let table = Results.current()?.table("Services"), let first = table.rows.first(where: { !table.value($0, "Subch").isEmpty }) {
                         autoSelected = true

@@ -43,7 +43,7 @@ void onair_key_enter(void);
 bool onair_wants_keyboard(void);                                 // io.WantTextInput
 int onair_keyboard_kind(void);                                   // 0 text, 1 decimal
 
-// network radios: type 0 Pluto, 1 rtl_tcp (NetRadio::Type). Tests the connection on a worker, then saves and selects the radio, as the
+// network radios, by NetRadio::Type. Tests the connection on a worker, then saves and selects the radio, as the
 // desktop's Network radios window does. Stops the receiver first, because a radio is only picked while stopped.
 void onair_net_connect(int type, const char* host, int port);
 bool onair_net_busy(void);

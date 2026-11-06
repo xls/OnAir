@@ -3,11 +3,53 @@ import SwiftUI
 
 /// Adds a network radio. The native form sets what the desktop's Network radios window sets, and C++ does the rest.
 struct RadioSheet: View {
+    /// The raw values are OnAir's NetRadio::Type. SoapyRemote needs SoapySDR, which this app does not have.
     private enum Kind: Int, CaseIterable, Identifiable {
-        case pluto = 0, rtlTcp = 1
+        case pluto = 0, rtlTcp = 1, spyServer = 3, hermesLite = 4, redPitaya = 5, sdrpp = 6, nrsp = 7, kiwi = 8, tci = 10
         var id: Self { self }
-        var label: String { self == .pluto ? "Pluto" : "rtl_tcp" }
-        var defaultPort: String { self == .pluto ? "0" : "1234" }
+
+        var label: String {
+            switch self {
+            case .pluto: "Pluto (by IP)"
+            case .rtlTcp: "rtl_tcp"
+            case .spyServer: "SpyServer"
+            case .hermesLite: "Hermes Lite 2"
+            case .redPitaya: "Red Pitaya"
+            case .sdrpp: "SDR++ server"
+            case .nrsp: "SDRplay nRSP-ST"
+            case .kiwi: "KiwiSDR"
+            case .tci: "TCI"
+            }
+        }
+
+        var help: String {
+            switch self {
+            case .pluto: "Any Pluto-compatible radio: the E310, Pluto+, or a stock Pluto on a network."
+            case .rtlTcp: "An RTL-SDR served by rtl_tcp on another computer."
+            case .sdrpp: "SDR++ running with --server. It takes one client at a time."
+            case .nrsp: "Reached through SDRconnect's WebSocket server."
+            case .kiwi: "A receiver on the internet, 0 to 30 MHz."
+            case .tci: "ExpertSDR3 and others with a TCI server. Receive only."
+            default: ""
+            }
+        }
+
+        /// A radio here can be a name as well as a number, so the full keyboard is needed; a Pluto or rtl_tcp address is a number.
+        var numericAddress: Bool { self == .pluto || self == .rtlTcp || self == .hermesLite || self == .redPitaya }
+
+        var defaultPort: String {
+            switch self {
+            case .pluto: "0"
+            case .rtlTcp: "1234"
+            case .spyServer: "5555"
+            case .hermesLite: "1024"
+            case .redPitaya: "1024"
+            case .sdrpp: "5259"
+            case .nrsp: "5454"
+            case .kiwi: "8073"
+            case .tci: "50001"
+            }
+        }
     }
 
     @AppStorage("radioKind") private var kind = Kind.pluto
@@ -19,38 +61,57 @@ struct RadioSheet: View {
     @State private var poll = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Picker("Type", selection: $kind) {
-                    ForEach(Kind.allCases) { Text($0.label).tag($0) }
+        PanelPage {
+            PanelSection(title: "Network radio") {
+                PanelRow(label: "Type", help: kind.help) {
+                    SelectorWindow(selected: kind.label, options: Kind.allCases.map(\.label)) { index in
+                        kind = Kind.allCases[index]
+                        port = kind.defaultPort
+                    }
                 }
-                .pickerStyle(.segmented)
-                .onChange(of: kind) { _, new in port = new.defaultPort }
-                TextField("Address", text: $host)
-                    .keyboardType(.decimalPad)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                if kind == .rtlTcp {
-                    TextField("Port", text: $port).keyboardType(.numberPad)
+                PanelRow(label: "Address") {
+                    GlassWindow(corner: 4) {
+                        TextField("", text: $host)
+                            .font(.system(size: 14, design: .monospaced))
+                            .foregroundStyle(RadioTheme.amber)
+                            .keyboardType(kind.numericAddress ? .decimalPad : .URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                            .padding(8)
+                            .frame(width: 170)
+                    }
                 }
-                if !problem.isEmpty {
-                    Text(problem).foregroundStyle(.red)
+                if kind != .pluto {
+                    PanelRow(label: "Port") {
+                        GlassWindow(corner: 4) {
+                            TextField("", text: $port)
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundStyle(RadioTheme.amber)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .padding(8)
+                                .frame(width: 90)
+                        }
+                    }
                 }
             }
-            .navigationTitle("Radio")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    if busy { ProgressView() } else { Button("Connect", action: connect).disabled(host.isEmpty) }
-                }
+            if !problem.isEmpty {
+                Text(problem).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
             }
+            HStack(spacing: 8) {
+                HardwareKey(action: { dismiss() }) { EngravedLabel(text: "CANCEL", size: 9) }
+                HardwareKey(lit: busy, led: .green, action: connect) { EngravedLabel(text: busy ? "CONNECTING" : "CONNECT", size: 9) }
+            }
+            .frame(height: 54)
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
         .onReceive(poll) { _ in check() }
     }
 
     private func connect() {
+        guard !busy, !host.isEmpty else { return }
         problem = ""
         busy = true
         onair_net_connect(Int32(kind.rawValue), host, Int32(port) ?? 0)
