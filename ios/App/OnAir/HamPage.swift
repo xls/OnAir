@@ -195,7 +195,7 @@ struct HamPage: View {
                 LazyVStack(alignment: .leading, spacing: 3) {
                     let table = results.tables?.first { !$0.rows.isEmpty }
                     if let table {
-                        ForEach(Array(table.rows.suffix(120).reversed().enumerated()), id: \.offset) { _, row in
+                        ForEach(Array(table.rows.prefix(120).enumerated()), id: \.offset) { _, row in
                             Text(row.joined(separator: "  "))
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(row.joined().contains("CQ") ? Color.green : Rig.lcd)

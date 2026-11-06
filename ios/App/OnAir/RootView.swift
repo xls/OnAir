@@ -11,20 +11,24 @@ extension OnAirFamily {
     /// HF digital, CW, PSK, JS8Call and friends, and the general receiver for voice.
     static let hamFamilies: Set<Int> = [25, 34, 36, 37, 95, 113, 116, 119, 140, 205]
     /// DAB, DRM, HD Radio, AM, AM stereo, CDR, shortwave
-    static let broadcast: Set<Int> = [2, 10, 21, 55, 107, 22, 212]
-    /// ADS-B, sondes, AIS, UAT, FLARM, drones, VDES, APRS
-    static let trackers: Set<Int> = [11, 13, 14, 83, 66, 56, 68, 63, 24]
+    static let broadcast: Set<Int> = [2, 10, 21, 55, 107, 22]
+    /// ADS-B, GNSS, sondes, AIS, UAT, FLARM, drones, VDES, APRS, Orbcomm, SARSAT, ASTERIX, Argos, LoRa satellites
+    static let trackers: Set<Int> = [11, 12, 13, 14, 83, 66, 56, 68, 63, 24, 44, 92, 151, 152, 201]
     /// DMR, NXDN, P25, dPMR, TETRA, TETRAPOL, trunking, D-STAR, M17, Fusion
     static let twoWay: Set<Int> = [9, 38, 50, 180, 45, 46, 79, 127, 129, 130, 33, 31, 128]
-    /// LoRa mesh networks, pagers
-    static let messaging: Set<Int> = [20, 23, 75]
+    /// LoRa mesh networks, pagers, aircraft data links, marine text and satellite messages
+    static let messaging: Set<Int> = [20, 23, 75, 15, 16, 17, 18, 27, 35, 82, 76, 81, 146, 147, 204, 141]
+    /// Weather satellites and anything else that decodes pictures
+    static let pictures: Set<Int> = [59, 60, 64, 80, 206, 230, 231, 232, 233, 234, 235, 236, 53, 131, 212]
+    /// Sensors, networks and cells
+    static let devices: Set<Int> = [28, 32, 39, 51, 54, 57, 65, 69, 70, 77, 78, 84, 86, 98, 71, 143, 148, 153, 200, 210]
 
     static func isHam(family: Int, mode: String) -> Bool { hamFamilies.contains(family) || mode == "General receiver" }
 
     /// True when the mode opens a screen of its own rather than the generic results list. RootView's page choice follows the same sets.
     static func hasNativeScreen(family: Int, mode: String) -> Bool {
         family == fm || television.contains(family) || isHam(family: family, mode: mode) || broadcast.contains(family) || trackers.contains(family) ||
-            twoWay.contains(family) || messaging.contains(family)
+            twoWay.contains(family) || messaging.contains(family) || pictures.contains(family) || devices.contains(family)
     }
 }
 
@@ -124,6 +128,10 @@ struct RootView: View {
                 TwoWayPage(receiver: receiver)
             } else if OnAirFamily.messaging.contains(receiver.status.family) {
                 TexterPage(receiver: receiver)
+            } else if OnAirFamily.pictures.contains(receiver.status.family) {
+                PicturePage(receiver: receiver)
+            } else if OnAirFamily.devices.contains(receiver.status.family) {
+                DevicesPage(receiver: receiver)
             } else {
                 ModeResultsPage(receiver: receiver)
             }

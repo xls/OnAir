@@ -11,7 +11,7 @@ struct TwoWayPage: View {
 
     private var calls: Results.Table? { results.tables?.first { $0.column("Source", "MY") != nil } }
     private var talkgroups: Results.Table? { results.table(withColumn: "Talkgroup") }
-    private var latest: [String]? { calls?.rows.last }
+    private var latest: [String]? { calls?.rows.first }
 
     var body: some View {
         ScrollView {
@@ -67,7 +67,7 @@ struct TwoWayPage: View {
     private func section<Row: View>(_ title: String, _ table: Results.Table, @ViewBuilder row: @escaping ([String]) -> Row) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            ForEach(Array(table.rows.suffix(40).reversed().enumerated()), id: \.offset) { _, values in
+            ForEach(Array(table.rows.prefix(40).enumerated()), id: \.offset) { _, values in
                 row(values)
                     .padding(9)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -112,7 +112,7 @@ struct BroadcastPage: View {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
                         Button {
-                            onair_broadcast_select(Int32(table.value(row, "Subch")) ?? -1)
+                            if let index = Int32(table.value(row, "Subch")) { onair_broadcast_select(index) }
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 1) {

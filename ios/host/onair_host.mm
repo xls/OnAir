@@ -7,6 +7,7 @@
 #include "ui/settings_table.h"
 #include "gfx/colormap.h"
 #include "results_json.h"
+#include "results_kit.h"
 #include "dect2/channels/freq_db.h"
 #include "dect2/codec/codec_registry.h"
 #include "dect2/codec/speech_codec.h"
@@ -85,6 +86,40 @@ const settings::Info* settingByKey(const char* key) {
 }
 
 void retuneIfRunning(App& a) { if (a.engine.running()) a.engine.retune(a.tune); }
+
+// two receivers report outside RxTelemetry, so their exporters need the engine
+bool exportAtsc3(App& a, onair::results::Out& o) {
+    dect2::Atsc3Telemetry t;
+    if (!a.engine.atsc3Telemetry(t)) return false;
+    namespace r = onair::results;
+    o.card("State", t.locked ? "locked" : "searching");
+    o.card("CFO", r::text("%+.0f Hz", t.cfoHz));
+    o.card("Bootstraps", std::to_string(t.bootstraps));
+    o.card("Frames ok / failed", std::to_string(t.frames) + " / " + std::to_string(t.framesFailed));
+    o.card("Load", r::text("%.0f %%", t.load * 100));
+    r::Table table("Services", {"Service", "Type", "kbit/s", "Subch", "Now playing"});
+    for (const auto& v : t.services) table.row({v.shortName, "", "", std::to_string(v.serviceId), ""});
+    o.table(table);
+    return true;
+}
+
+bool exportAsterix(App& a, onair::results::Out& o) {
+    dect2::AsterixTelemetry t;
+    if (!a.engine.asterix().telemetry(t, 0)) return false;
+    namespace r = onair::results;
+    o.card("Input", t.input);
+    o.card("Datagrams", std::to_string(t.datagrams));
+    o.card("Tracks", std::to_string(t.tracks.size()));
+    if (!t.error.empty()) o.card("Problem", t.error);
+    r::Table table("Tracks", {"Id", "Callsign", "Lat", "Lon", "Alt ft"});
+    size_t n = 0;
+    for (const dect2::AsterixTrack& x : t.tracks) {
+        if (++n > 200) break;
+        table.row({std::to_string(x.key), x.callsign, x.hasPos ? r::text("%.5f", x.lat) : "", x.hasPos ? r::text("%.5f", x.lon) : "", x.hasAltFt ? r::text("%.0f", x.altFt) : ""});
+    }
+    o.table(table);
+    return true;
+}
 
 // ---- fingers: the first one is ImGui's mouse; a second one cancels its press, so a pinch never tunes or drags
 struct Finger { int id; float x, y; };
@@ -595,12 +630,62 @@ const char* onair_results_json(void) {
     App& a = appRunApp();
     if (a.rx.standard == 3) { const dect2::DabEnsemble ens = a.engine.dabEnsemble(); gJson = onair::resultsJson(a.rx, a.engine.running(), &ens); }
     else gJson = onair::resultsJson(a.rx, a.engine.running());
+    // the modes results_json.cpp has no tables for: ios/host/results_*.cpp
+    namespace r = onair::results;
+    r::Out extra;
+    bool known = r::aviationMarine(a.rx, extra) || r::satelliteScience(a.rx, extra) || r::iotCellular(a.rx, extra);
+    if (!known) {
+        r::gRowsArriveOldestFirst = true;   // results_utility.cpp walks its lists oldest first
+        known = r::utilityTools(a.rx, extra);
+        r::gRowsArriveOldestFirst = false;
+    }
+    if (a.rx.standard == 4) known = exportAtsc3(a, extra) || known;
+    if (a.family == 151) known = exportAsterix(a, extra) || known;
+    if (known) {
+        const size_t at = gJson.find("\"cards\":[");
+        if (at != std::string::npos && !extra.empty()) gJson = gJson.substr(0, at) + extra.json() + "}";
+    }
     return gJson.c_str();
+}
+
+bool onair_image_latest(const unsigned char** rgba, int* width, int* height, unsigned long long* seq) {
+    App& a = appRunApp();
+    static std::vector<uint8_t> held;
+    static uint64_t last = 0;
+    static int w = 0, h = 0;
+    if (a.rx.standard == 16) {   // weather fax is held by the receiver, in grey
+        dect2::FaxImage fax;
+        if (!a.engine.marine().latestImage(fax, last) || fax.width <= 0) return false;
+        w = fax.width;
+        h = fax.height;
+        held.resize(fax.pix.size() * 4);
+        for (size_t i = 0; i < fax.pix.size(); i++) { held[i * 4] = held[i * 4 + 1] = held[i * 4 + 2] = fax.pix[i]; held[i * 4 + 3] = 255; }
+    } else if (!onair::results::latestImage(a.rx, held, w, h, last) || w <= 0 || held.empty()) {
+        return false;
+    }
+    *rgba = held.data();
+    *width = w;
+    *height = h;
+    *seq = last;
+    return true;
+}
+
+bool onair_jpeg_latest(const unsigned char** bytes, int* size) {
+    static std::shared_ptr<const std::vector<uint8_t>> held;
+    const auto& images = appRunApp().rx.ssdv.images;
+    if (images.empty() || !images.front().jpeg || images.front().jpeg->empty()) return false;
+    held = images.front().jpeg;
+    *bytes = held->data();
+    *size = (int)held->size();
+    return true;
 }
 
 void onair_broadcast_select(int subchannel) {
     App& a = appRunApp();
+    if (subchannel < 0) return;
     if (a.rx.standard == 3 || a.dabMode) dabSelectStation(a, subchannel, true);
+    else if (a.rx.standard == 22) a.engine.hdr().setProgram(subchannel);
+    else if (a.rx.standard == 23) a.engine.cdr().setListen(subchannel);
     else a.engine.drm().selectService(subchannel);
 }
 

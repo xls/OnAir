@@ -146,6 +146,10 @@ const char* onair_tx_json(void);                                 // running, sec
 void onair_broadcast_select(int subchannel);
 bool onair_slide_latest(const unsigned char** rgba, int* width, int* height);
 
+// the active mode's newest picture (weather satellites, SSTV ...), RGBA, valid until the next call. seq changes with the picture
+bool onair_image_latest(const unsigned char** rgba, int* width, int* height, unsigned long long* seq);
+bool onair_jpeg_latest(const unsigned char** bytes, int* size);   // SSDV sends JPEG
+
 // the active mode's decoded results: summary, cards and tables
 const char* onair_results_json(void);
 
