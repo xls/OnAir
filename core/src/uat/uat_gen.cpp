@@ -32,11 +32,14 @@ static bool parseHex(const char* s, uint8_t* out, int n) {
     return true;
 }
 
+// +-312.5 kHz at 2 samples per bit (of 65536 per turn): the deviation of a real UAT signal
+constexpr int16_t kDphi = 10240;
+
 static void modByte(uint8_t b, int16_t center, std::vector<int16_t>& dphi) {
     for (int bit = 7; bit >= 0; bit--) {
         const bool one = (b >> bit) & 1;
-        dphi.push_back(one ? center + 400 : center - 400);
-        dphi.push_back(one ? center + 400 : center - 400);
+        dphi.push_back(one ? center + kDphi : center - kDphi);
+        dphi.push_back(one ? center + kDphi : center - kDphi);
     }
 }
 
@@ -58,8 +61,8 @@ static std::vector<cf32> modulateCodeword(const uint8_t* codeword, int codewordB
     std::vector<int16_t> dphi;
     for (int i = 0; i < kSyncBits; i++) {
         const bool one = (kAdsbSync >> (35 - i)) & 1;
-        dphi.push_back(one ? 500 : -500);
-        dphi.push_back(one ? 500 : -500);
+        dphi.push_back(one ? kDphi : -kDphi);
+        dphi.push_back(one ? kDphi : -kDphi);
     }
     const int16_t center = 0;
     for (int i = 0; i < codewordBytes; i++) modByte(codeword[i], center, dphi);
@@ -114,8 +117,8 @@ struct UatSynth : ModeSynth {
         for (int a = 0; a < nAc; a++) {
             UatTx tx;
             tx.timeSec = 0.4 + a * 1.7;
-            if (!parseHex(kVec, tx.frame, UAT_SHORT_FRAME_BYTES)) return false;
-            tx.frameBytes = UAT_SHORT_FRAME_DATA_BYTES;
+            if (!parseHex(kVec, tx.frame, UAT_LONG_FRAME_BYTES)) return false;   // a long frame: all 48 bytes
+            tx.frameBytes = UAT_LONG_FRAME_DATA_BYTES;
             tx.gainDb = -6.0f * (float)a;
             tx.cfoHz = (a - 1) * 1200.0;
             sched.push_back(tx);

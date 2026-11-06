@@ -18,6 +18,8 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>OnAir centres its maps on where you are.</string>
 	<key>NSMicrophoneUsageDescription</key>
@@ -26,5 +28,7 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 </dict>
 </plist>

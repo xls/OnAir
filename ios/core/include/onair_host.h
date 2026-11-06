@@ -112,6 +112,11 @@ void onair_iptv_open(const char* address);                        // a stream or
 void onair_iptv_play(int index);
 void onair_iptv_stop(void);
 const char* onair_iptv_json(void);
+const char* onair_iq_folder(void);                                 // Documents/Recordings, also seen in the Files app
+const char* onair_iq_list_json(void);                              // [{name, path, rate, hz, seconds, mode}]
+bool onair_iq_open(const char* path, double rateHz);               // play it, looping; rateHz is for a raw file with no rate in its name
+bool onair_iq_record(bool on);
+const char* onair_iq_record_json(void);                            // {active, seconds, bytes, dropped, error}
 const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs
 void onair_tv_play_file(const char* path);                        // a recorded .ts through the demux and the player, at its own pace
 void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic

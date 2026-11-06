@@ -24,6 +24,7 @@ struct TwoWayPage: View {
                 stats
                 if let talkgroups, !talkgroups.rows.isEmpty { section("Talkgroups", talkgroups) { row in talkgroupRow(talkgroups, row) } }
                 if let calls, !calls.rows.isEmpty { section("Calls", calls) { row in callRow(calls, row) } }
+                if calls?.rows.isEmpty ?? true, talkgroups?.rows.isEmpty ?? true { InstrumentTables(results: results) }
             }
             .padding(12)
         }
@@ -84,7 +85,7 @@ struct TwoWayPage: View {
         HStack {
             Text(table.value(row, "Talkgroup")).font(.body.monospaced().weight(.medium)).foregroundStyle(Self.accent)
             Spacer()
-            Text("\(table.value(row, "Calls")) calls").font(.caption).foregroundStyle(.secondary)
+            Text(table.value(row, "Calls") == "1" ? "1 call" : "\(table.value(row, "Calls")) calls").font(.caption).foregroundStyle(.secondary)
         }
     }
 

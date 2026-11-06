@@ -31,24 +31,28 @@ bottom bar, the page chips and native sheets.
 
 ## Status
 
-What was measured, on the simulator unless it says the iPhone. `tools/verify_mode.sh` runs a mode against OnAir's built-in test signal and prints what the decoder produced.
+What was measured, on the simulator unless it says the iPhone. `tools/verify_all.py` runs every mode against OnAir's built-in test signal and logs what the decoder produced and what the screen shows. `tools/make_test_iq.cpp` writes SigMF recordings for modes with no built-in signal; copy them to `Documents/Recordings` and play them with `--iq <name>`.
+
+Last full sweep: 183 of 183 modes start and none crashes.
 
 | Screen | Measured | Not yet done |
 |---|---|---|
 | FM | Real stations through the E310 on the iPhone | Long listening test |
 | Spectrum and scopes | 60 fps on the iPhone | |
-| TV | H.264 720p and MPEG-2 576p with audio, through hardware decoding from a stream file | Real over-the-air channel; no channel found so far |
-| Ham | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW | Never transmitted on air; microphone voice TX |
-| Broadcast | DAB+ with audio, DRM with audio, AM, shortwave. HD Radio locks and shows stations | HD Radio sound needs the HDC codec |
-| Trackers | ADS-B 12 aircraft, AIS 19 ships, APRS 10 stations from the test signal | Real traffic. Maps centre on the phone's location |
-| Two-way | DMR, P25, NXDN and D-STAR calls and IDs from the test signal | Voice needs mbelib |
-| Messaging | Meshtastic 5 nodes with messages, POCSAG 28 pages; transmit checked into IQ files | Never sent on air |
+| TV | DVB-T picture and sound from the test signal; H.264 720p and MPEG-2 576p from stream files; automatic detection; Internet TV, direct and playlist | Real over-the-air channel. DVB-T2 video: the built-in T2 signal carries no payload, so it was only checked by the upstream unit test |
+| Ham | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW | Never transmitted on air. The WSPR and EME submodes stay on "listening": the test signal is FT8 only |
+| Broadcast | DAB+, DRM, AM and shortwave with audio. HD Radio locks and shows stations | No sound for HD Radio (HDC) or CDR (DRA+): those codecs are not available |
+| Trackers | ADS-B, AIS, APRS, UAT and Horus from the test signals | Real traffic |
+| Two-way | DMR, P25, NXDN, D-STAR, M17 and FreeDV with voice. Fusion, P25 Phase 2 and MPT 1327 from recordings | LTR and EDACS have no test input in the app |
+| Messaging | Meshtastic and POCSAG; transmit checked into IQ files | Never sent on air |
+| Navigation | DGPS and Loran-C from recordings | DME, DCF77 needs more than a minute to decode |
+| Recordings | Record, replay with the mode restored, FM locked at 52 dB with sound | Import through the Files picker was not exercised by a test |
 
-Voice and sound codecs are patented or of unclear status, so OnAir ships none of them: mbelib for DMR, P25, NXDN, dPMR and D-STAR voice, HDC for HD
-Radio, DRA+ for CDR. On iOS they cannot be installed at run time and would have to be linked in at build time, through the same hook as libiio.
-codec2 is open (FreeDV, M17) and is not linked yet.
+SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. Marine VHF, HF ID, ASTERIX, Custom decoders and Add-ons have no test input. Other than the codecs named above, no mode needs a plug-in.
 
-Other modes use the generic results screen. Background decoding stops updating while the screen is off, though audio should continue.
+## Limits found while testing
+
+- UAT's test signal never decoded: its deviation was far too small and it sent only part of a long frame. Fixed in `core/src/uat/uat_gen.cpp`, which also fixes UAT transmit. Worth sending upstream.
 
 ## Direction: native first
 

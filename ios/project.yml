@@ -29,6 +29,8 @@ targets:
       path: App/OnAir/Info.plist
       properties:
         UIBackgroundModes: [audio]
+        UIFileSharingEnabled: true          # Documents/Recordings shows in the Files app
+        LSSupportsOpeningDocumentsInPlace: true
         NSLocationWhenInUseUsageDescription: OnAir centres its maps on where you are.
         NSMicrophoneUsageDescription: OnAir sends your voice when you transmit.
     dependencies:

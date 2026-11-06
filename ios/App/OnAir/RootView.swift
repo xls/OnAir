@@ -165,6 +165,14 @@ struct RootView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { onair_iptv_play(channel) }
         }
         if let file = value("--ts") { onair_tv_play_file(file) }
+        if let seconds = value("--record").flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { _ = onair_iq_record(true) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2 + seconds) { _ = onair_iq_record(false) }
+        }
+        if let name = value("--iq") { 
+            onair_iq_open("\(String(cString: onair_iq_folder()))/\(name)", 0)
+            label = name
+        }
         if let path = value("--tx-file") { transmitToFile(path, mode: value("--mode") ?? "") }
         if !label.isEmpty {
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in

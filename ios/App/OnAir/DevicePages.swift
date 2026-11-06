@@ -9,7 +9,7 @@ struct SourcePage: View {
     var body: some View {
         PanelPage {
             PanelSection(title: "Source") {
-                ForEach(Array(receiver.devices.enumerated()), id: \.offset) { index, name in
+                ForEach(Array(receiver.devices.enumerated()).filter { !$0.element.hasPrefix("IQ recording") }, id: \.offset) { index, name in
                     Button {
                         onair_device_select(Int32(index))
                         receiver.refresh()
@@ -29,6 +29,7 @@ struct SourcePage: View {
                 EngravedLabel(text: "ADD NETWORK RADIO", size: 9)
             }
             .frame(height: 50)
+            RecordingsSection(receiver: receiver)
         }
         .sheet(isPresented: $showAdd) {
             RadioSheet()
