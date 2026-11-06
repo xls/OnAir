@@ -56,6 +56,7 @@ struct RootView: View {
             receiver.refresh()
         }
         .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = true   // a radio stays on: the screen does not lock by itself while the app is open
             TiltLight.shared.start()
             openLaunchPage()
         }

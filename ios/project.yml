@@ -15,6 +15,10 @@ targets:
     type: application
     platform: iOS
     sources: [App/OnAir]
+    info:
+      path: App/OnAir/Info.plist
+      properties:
+        UIBackgroundModes: [audio]
     dependencies:
       - framework: build/OnAirCore.xcframework
         embed: false
@@ -48,5 +52,4 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
-        INFOPLIST_KEY_UIBackgroundModes: audio
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: OnAir connects to your PlutoSDR or rtl_tcp radio on the local network.

@@ -275,12 +275,14 @@ struct SpectrumPage: View {
                     pan: { change, done in pan(change: change, width: width, done: done) },
                     zoom: { scale, done in zoom(scale: scale, done: done) }
                 )
-                HardwareKey(lit: spectrum.visibleSpan < 1, action: resetZoom) {
-                    EngravedLabel(text: "RESET", size: 8)
+                if spectrum.visibleSpan < 1 {
+                    HardwareKey(lit: true, action: resetZoom) {
+                        EngravedLabel(text: "RESET", size: 8)
+                    }
+                    .frame(width: 66, height: 46)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
-                .frame(width: 66, height: 46)
-                .padding(10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
     }
