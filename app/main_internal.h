@@ -27,5 +27,11 @@ GLFWwindow* createMainWindow(int argc, char** argv);            // main_window.c
 void loadFonts(App& app, ImGuiIO& io);                           // main_window.cpp
 void startApp(App& app, int argc, char** argv);                               // main_start.cpp: startup guard, first-run dialogs, radios, last results
 void parseDevFlags(App& app, int argc, char** argv, DevOpts& o); // main_start.cpp
+bool appRunInit(int argc, char** argv);                          // main.cpp: main() in three parts, the iOS host calls them
+void appRunFrame();
+int appRunShutdown();
+void appRunFlush();                                              // settings and results to disk
+App& appRunApp();
+double appRunInterval();                                         // the interval the frame pacing chose last
 bool anyRunning();                                               // ui/main_tabs.cpp
 void lightenDrawData(ImDrawData* dd, bool light = true, bool highContrast = false);   // ui/light_theme.cpp

@@ -8,7 +8,8 @@ extern "C" {
 typedef enum {
     ONAIR_PAGE_RECEIVER = 0,   // the spectrum and waterfall (overviewTab)
     ONAIR_PAGE_MODE,           // mainTabs(): the current mode's tabs, or its Simple view
-    ONAIR_PAGE_TUNER,          // toolbarParts(Source | Tuner | Decoder), source options, radio settings
+    ONAIR_PAGE_TUNER,          // toolbarParts(Tuner | Decoder), source options, radio settings
+    ONAIR_PAGE_GAIN,           // toolbarParts(Gain)
     ONAIR_PAGE_LIST,           // rightPanel(): stations, services, aircraft ...
     ONAIR_PAGE_ANALYSIS,       // constellationsTab()
     ONAIR_PAGE_SETTINGS,       // settingsWindow()
@@ -17,6 +18,7 @@ typedef enum {
 
 // lifecycle
 bool onair_start(void* caMetalLayer, const char* resourceDir);   // once, from the first layout (the view has a size)
+bool onair_is_started(void);
 void onair_frame(void);                                          // MTKViewDelegate draw, and the background timer
 void onair_set_background(bool background);                      // scenePhase: no Metal work while true; flushes the settings
 void onair_flush(void);                                          // settings and results to disk (may be killed after this)
@@ -39,8 +41,29 @@ void onair_key_enter(void);
 bool onair_wants_keyboard(void);                                 // io.WantTextInput
 int onair_keyboard_kind(void);                                   // 0 text, 1 decimal
 
-// state for the native bar
-const char* onair_status_json(void);                             // running, frequency, mode name
+// network radios: type 0 Pluto, 1 rtl_tcp (NetRadio::Type). Tests the connection on a worker, then saves and selects the radio, as the
+// desktop's Network radios window does. Stops the receiver first, because a radio is only picked while stopped.
+void onair_net_connect(int type, const char* host, int port);
+bool onair_net_busy(void);
+const char* onair_net_error(void);                               // "" when the last attempt worked
+
+// the native controls: each calls what the desktop's control calls
+void onair_start_stop(void);
+void onair_tune_mhz(double mhz);
+void onair_set_volume(float volume, bool muted);                 // 0..2, as the desktop's slider
+int onair_device_count(void);
+const char* onair_device_name(int i);
+int onair_device_selected(void);
+void onair_device_select(int i);
+int onair_mode_count(void);
+const char* onair_mode_name(int i);
+const char* onair_mode_group(int i);
+const char* onair_mode_blurb(int i);
+bool onair_mode_is_selected(int i);
+void onair_mode_select(int i);
+
+// state for the native strip: running, mhz, mode, source, volume, muted
+const char* onair_status_json(void);
 
 #ifdef __cplusplus
 }

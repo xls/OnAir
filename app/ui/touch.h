@@ -62,5 +62,10 @@ void closeSheet();
 
 // ---- the shell (touch_shell.cpp)
 void shell(App& a, ImVec2 disp);
+// A host with its own navigation (iOS): body is drawn in place of the shell's body and the shell's top bar and dock go; the sheets and the
+// gestures stay. Null: the shell as it is.
+void setShellHost(void (*body)(App&, ImVec2));
+int tabCount();                                        // the tabs noteTab() saw last frame
+const char* tabName(int i, bool* open);
 
 }   // namespace touch

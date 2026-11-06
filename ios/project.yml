@@ -24,7 +24,14 @@ targets:
       - sdk: CFNetwork.framework
       - sdk: CoreMedia.framework
       - sdk: CoreVideo.framework
+      - sdk: AVKit.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreLocation.framework
+      - sdk: ImageIO.framework
       - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: QuartzCore.framework
+      - sdk: UIKit.framework
       - sdk: Security.framework
       - sdk: VideoToolbox.framework
       - sdk: libc++.tbd

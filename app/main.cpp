@@ -4,6 +4,11 @@
 #ifdef __linux__
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#else
+#define TARGET_OS_IPHONE 0
+#endif
 #include "dect2/common/time_source.h"
 #include "dect2/session/mode_adapters.h"
 #include "dect2/session/session_store.h"
@@ -292,7 +297,21 @@ extern bool gOnAirIdCheck;      // third_party/imgui/imgui.cpp (test hook)
 extern int gOnAirIdConflicts;
 static bool gIdCheckFailed = false;
 
-int main(int argc, char** argv) {
+// what main() and the iOS host share: start, one frame, stop (the host calls them from its MTKView delegate)
+namespace {
+struct Run {
+    GLFWwindow* window = nullptr;
+    gfx::Backend* gfxBackend = nullptr;
+    App* app = nullptr;
+    DevOpts o;
+    double last = 0, frameNext = 0, lastInputT = 0, interval = 0;
+    ImGuiStyle baseStyle;
+};
+Run gRun;
+}
+
+bool appRunInit(int argc, char** argv) {
+    Run& R = gRun;
     dect2::crash::install();   // first: a crash from here on leaves a report
 #ifdef __linux__
     if (geteuid() == 0) fprintf(stderr, "OnAir: running as root is not needed; see docs for udev rules\n");
@@ -313,10 +332,10 @@ int main(int argc, char** argv) {
     }
     if (!dect2::cpuSupportsBuild()) {
         plat::showFatalError("OnAir", "This version of OnAir needs a processor with AVX2 and FMA instructions (any Intel or AMD processor from about 2013 on).");
-        return 1;
+        return false;
     }
-    GLFWwindow* window = createMainWindow(argc, argv);
-    if (!window) return 1;   // createMainWindow has already said why
+    GLFWwindow* window = R.window = createMainWindow(argc, argv);
+    if (!window) return false;   // createMainWindow has already said why
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -324,12 +343,12 @@ int main(int argc, char** argv) {
     void layoutCheckInstall();   // layout_check.cpp (developer build)
     layoutCheckInstall();
 #endif
-    gfx::Backend* gfxBackend = gfx::create(window);
+    gfx::Backend* gfxBackend = R.gfxBackend = gfx::create(window);
     if (!gfxBackend) {
         fprintf(stderr, "could not start the graphics back end (%s)\n", gfx::levelName());
         plat::showFatalError("OnAir", "OnAir could not start its graphics (the OpenGL functions it needs are missing or the shaders failed).\n\n"
             "On a Raspberry Pi or another board with a Mesa driver, try:\nMESA_GL_VERSION_OVERRIDE=3.3 MESA_GLSL_VERSION_OVERRIDE=330 onair");
-        return 1;
+        return false;
     }
     gGfx = gfxBackend;
 
@@ -360,9 +379,10 @@ int main(int argc, char** argv) {
     }
     applyTheme();
     typo::applyStyle(ImGui::GetStyle());
-    static ImGuiStyle baseStyle = ImGui::GetStyle();   // the style at scale 1
+    R.baseStyle = ImGui::GetStyle();   // the style at scale 1
 
-    App app;
+    R.app = new App;
+    App& app = *R.app;
     loadFonts(app, io);
     // A layout slip (an item missing after SetCursorPos, for example) is recovered by ImGui; the red 'MESSAGE FROM DEAR IMGUI' box and the assert
     // are for developers, so users do not get a popup over the window. The recovery message still goes to the debug log.
@@ -381,14 +401,25 @@ int main(int argc, char** argv) {
 
     app.wf.init(gfxBackend);
     startApp(app, argc, argv);
-    DevOpts o;
+    DevOpts& o = R.o;
     parseDevFlags(app, argc, argv, o);
     if (!o.shotPath && argc <= 1 && touch::autoTouch(gWorkAreaW, gWorkAreaH, plat::prefs().has("touchUi") || plat::prefs().has("touchAutoSeen"))) {   // #139: a small screen starts in the touch interface (View > Touch interface turns it off)
         app.touchUi = true; plat::prefs().setB("touchAutoSeen", true); savePrefs(app);
     }
-    double last = glfwGetTime();
-    double frameNext = 0, lastInputT = 0;
-    while (!glfwWindowShouldClose(window)) {
+    R.last = glfwGetTime();
+    return true;
+}
+
+// one pass of the frame loop
+void appRunFrame() {
+    Run& R = gRun;
+    App& app = *R.app;
+    GLFWwindow* window = R.window;
+    gfx::Backend* gfxBackend = R.gfxBackend;
+    DevOpts& o = R.o;
+    ImGuiIO& io = ImGui::GetIO();
+    double& frameNext = R.frameNext; double& lastInputT = R.lastInputT; double& last = R.last;
+    const ImGuiStyle& baseStyle = R.baseStyle;
         appResultsSave(app);   // every 30 s: the lists the screens keep themselves (the engine saves its own on a thread)
         layoutTick(app, !app.touchUi && !o.shotPath);   // per-mode window positions (desktop; not in --shot runs)
         workspaceSessionTick(app);   // every few seconds: the last-session file (crash restore)
@@ -396,12 +427,13 @@ int main(int argc, char** argv) {
         savePrefsTick();   // a deferred tuning save (savePrefsSoon), once the tuning has been still
         {
             const PaceInfo pi = paceFrame(window, app, o, frameNext, lastInputT);
+            R.interval = pi.interval;
             glfwPollEvents();
             wbDropTick(app);
             updateTick(app);
             rcaps::frameGate(anyRunning());   // Linux / software OpenGL: input never draws faster than 60 fps; low-power drawing caps lower
             int w, h;
-            if (minimisedFrame(window, app, o, w, h)) continue;
+            if (minimisedFrame(window, app, o, w, h)) return;
             static const float kClear[4] = {0.04f, 0.045f, 0.05f, 1.f}, kClearLight[4] = {0.955f, 0.95f, 0.96f, 1.f};
             static const float kClearHc[4] = {0.f, 0.f, 0.f, 1.f};
             gfxBackend->newFrame(w, h, app.highContrast ? kClearHc : (app.lightUi || (app.newUi && app.uiTheme == 7)) ? kClearLight : kClear);
@@ -438,7 +470,27 @@ int main(int argc, char** argv) {
                 glfwSetWindowShouldClose(window, 1);
             }
         }
-    }
-    shutdownApp(app, gfxBackend, window);
+}
+
+int appRunShutdown() {
+    shutdownApp(*gRun.app, gRun.gfxBackend, gRun.window);
     return gIdCheckFailed ? 3 : 0;
 }
+
+App& appRunApp() { return *gRun.app; }
+double appRunInterval() { return gRun.interval; }
+// what must reach the disk before the system may end the app without notice (iOS): the first part of shutdownApp()
+void appRunFlush() {
+    savePrefsFlush();
+    plat::prefs().flush();
+    layoutSaveNow();
+    appResultsSave(*gRun.app, true);
+}
+
+#if !TARGET_OS_IPHONE
+int main(int argc, char** argv) {
+    if (!appRunInit(argc, argv)) return 1;
+    while (!glfwWindowShouldClose(gRun.window)) appRunFrame();
+    return appRunShutdown();
+}
+#endif

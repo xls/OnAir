@@ -1,6 +1,7 @@
 # OnAir for iOS: port plan
 
-Personal app, sideloaded. Fork `xls/OnAir`, branch `ios`. Sources: **PlutoSDR over IP** and **RTL-SDR over rtl_tcp**, nothing else.
+Personal app, sideloaded. Fork `xls/OnAir`, branch `ios`. Sources: every **network radio** OnAir supports, tested first on an ANTSDR E310 as a
+Pluto. USB radios are not possible on iOS. Receive and transmit, and all of OnAir's modes.
 
 ## Approach
 
@@ -27,6 +28,62 @@ bottom bar, the page chips and native sheets.
 | where possible) + dect2core/Rust |  Pluto through a built-in iiod client
 +----------------------------------+
 ```
+
+## Direction: native first
+
+The app is a custom native iOS app on OnAir's engine. `core/` and `rust/` stay unchanged and keep merging from upstream. The interface moves to
+native screen by screen, and any mode without a native screen falls back to its ImGui panel, so every mode keeps working.
+
+Order: native shell and controls, then a native Metal spectrum and waterfall, then native screens for the modes in use, starting with FM. The
+spectrum reuses the ImGui-free headers (`colormap.h`, `spec_pipe.h`, `spec_axis.h`, `tune_drag.h`, `wf_view.h`). Control logic that lives in
+`app/` (start, rate and bandwidth planning, tuning, per-mode ticks) is called through `ios/host` while `app/` is linked, rather than rewritten.
+
+## Native screens by kind of mode
+
+183 modes share a few shapes, so each shape is one reusable SwiftUI screen, filled with data from the core. A mode with no native screen yet
+uses its ImGui panel.
+
+| Priority | Screen type | Modes | What it looks like |
+|---|---|---|---|
+| 1 | **Radio** | FM, AM, DAB/DAB+, DRM, HD Radio, General receiver | A radio: dial, presets, station name, RDS text, slideshow |
+| 2 | **Map tracker** | ADS-B, AIS, APRS, UAT, Flarm, sondes, drones | MapKit map, moving targets, list, detail card |
+| 3 | **TV** | DVB-T/T2/S/C, ATSC, ISDB, DTMB, IPTV, analog TV | Channels, player, guide, teletext, scan |
+| 4 | **Ham transceiver** | SSB, CW, FT8, JS8, PSK, RTTY, SSTV, QO-100 | VFO, band and mode, S-meter, waterfall, log, transmit |
+| 5 | **Texter** | Meshtastic, LoRa mesh, pagers, APRS messages, ACARS | Conversations, send where the mode allows |
+| 6 | **Voice scanner** | P25, DMR, NXDN, TETRA, D-STAR, trunking | Talkgroups, active calls, scan list |
+| 7 | **Satellite** | Meteor, NOAA, GOES, CubeSats, Iridium, Inmarsat | Passes, tracking, image gallery |
+| 8 | **Sensors** | ISM, weather sensors, Zigbee, Z-Wave, LoRaWAN, IoT | Devices with latest readings |
+
+All of them sit on a shared foundation, built first:
+
+1. Native shell: status strip, Device, Spectrum, Mode and Settings tabs, Radio sheet.
+2. Native Metal spectrum and waterfall, with drag-to-tune and pinch-to-zoom.
+3. Typed data from C++ to Swift for each screen type: what the desktop panels already read from `RxTelemetry`, plus picture and audio status.
+4. Background audio, so the app is usable day to day.
+
+Supporting work, added when the screen type needing it comes up:
+
+- **FFmpeg for iOS** (TV, DAB+, DRM, HD Radio audio), reusing `DECT2_FFMPEG_PREFIX` and `tools/package/build_ffmpeg_static.sh`.
+- **Transmit.** libiio already includes the Pluto transmit path. Needs native TX controls with a clear on-air state and an explicit arm step.
+  The operator is responsible for licensing and for the rules of each band.
+- **More network radios** in the Radio sheet: SpyServer, KiwiSDR, SDR++ server, and others.
+- **Add-on decoders loaded at run time** (codec2, AAC, voice codecs): link them in with the same hook as libiio where the library is available.
+
+## Native or ImGui
+
+Use native controls for what the hand touches, and ImGui for what the eye reads. Native controls hold no receiver logic: they read and set
+the same C++ state and call the same functions as the desktop's controls.
+
+| Native (SwiftUI, UIKit gestures) | C++ ImGui |
+|---|---|
+| Bottom tabs, page chips, status strip, sheets and drawers | Spectrum and waterfall drawing, until the native Metal view replaces them |
+| Spectrum gestures: drag to tune, pinch to zoom, tap, long press | Plots, constellations, meters, ionograms |
+| Start and stop, frequency entry, volume, gain, mode picker | Decoded text, tables, maps and each mode's result panels |
+| Source and radio setup, text fields | The long tail of mode-specific panels (183 modes) |
+| Settings, using the data in `app/ui/settings_table.h` | Anything not yet moved to native |
+
+A control moves to native when people use it often or ImGui handles it badly on touch. Rarely used panels stay in ImGui: rewriting them would
+be new code to maintain and would drift from upstream.
 
 ## What the build tests showed
 
@@ -77,7 +134,8 @@ Design rules from the prototype:
 - **Size the view to the slot**, not full-screen. The sheet placement in `app/ui/touch.cpp:39-62` works from `io.DisplaySize`, so this avoids
   safe-area plumbing.
 - **No SwiftUI `TabView`** around the Metal view: it would re-parent it. Use a `ZStack` and a custom bar.
-- Build on the touch shell (`app/ui/touch*.cpp`) and its gestures and sheets, using the `touch::setShellHost` hook from the prototype.
+- Use the touch shell (`app/ui/touch*.cpp`) as the first working UI and as the fallback for pages not yet native, through the `touch::setShellHost` hook.
+- Put native gesture recognisers over the Metal view for the spectrum, and send results to the existing tuning and zoom logic (`app/gfx/tune_drag.h`).
 
 ## Pluto
 
@@ -131,7 +189,7 @@ Each phase ends with something runnable.
 - Connect rtl_tcp to a real server over Wi-Fi.
 - **Done when:** FM from each radio plays on the phone for 30 minutes with no dropped-sample warnings.
 
-### 3. The existing UI on the phone
+### 3. The existing UI on the phone (done on simulator; tested by hand)
 - Apply `ios/spike/ui/`: GLFW shim, `main.cpp` split into init/frame/shutdown, `gfx_metal.mm` host layer, power and AirPlay stubs.
 - Link `app/` with `dect2core`, plus `onair_web` or a stub. Disable updater, plugins, webshare and Discord.
 - Forward touch and `UIKeyInput`, and add the clipboard hooks.
@@ -140,7 +198,8 @@ Each phase ends with something runnable.
 
 ### 4. Navigation shell
 - SwiftUI status strip, custom bar, chip row, slot-sized view.
-- `ios/host` C API: `set_page`, `list_pages`, state for the strip, start/stop.
+- `ios/host` C API: `set_page`, `list_pages`, state for the strip, start/stop, and setters for the native controls.
+- Native Source, Gain, Tuner and Mode pages, plus spectrum gestures. Their ImGui versions stay available until the native ones work.
 - Split `sidebar()` into per-section functions. Report and hide `tabItem` and `subNav` entries.
 - **Done when:** all four tabs work and the Mode tab's name and chips change when the mode changes.
 

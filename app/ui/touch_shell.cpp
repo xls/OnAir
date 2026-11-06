@@ -13,6 +13,7 @@ namespace {
 bool gOpenGain = false, gOpenVol = false, gOpenTuner = false, gOpenMore = false;
 bool gDevDone = false;
 int gMorePage = 0;   // 0 menu of pages, 1 status, 2 results list, 3 analysis
+void (*gHostBody)(App&, ImVec2) = nullptr;   // setShellHost()
 
 struct Item { const char* label; float weight; };
 
@@ -148,6 +149,8 @@ void moreSheet(App& a) {
 
 }   // namespace
 
+void setShellHost(void (*body)(App&, ImVec2)) { gHostBody = body; }
+
 void shell(App& a, ImVec2 disp) {
     frame();
     if (!gDevDone && !gDevOpen.empty() && ImGui::GetFrameCount() > 60) {   // --touchsheet gain | vol | tuner | more | more1 | more2 | more3
@@ -158,14 +161,15 @@ void shell(App& a, ImVec2 disp) {
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(disp);
     ImGui::Begin("##troot", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
-    topBar(a, disp);
+    if (!gHostBody) topBar(a, disp);
     const bool wide = disp.x >= 1000.f * dpi();
     const float rowH = target() * 1.15f, sp = ImGui::GetStyle().ItemSpacing.y;
-    const float dockH = (wide ? 1 : 2) * rowH + (wide ? 0 : sp) + ImGui::GetStyle().WindowPadding.y * 2;
-    const float bodyH = ImGui::GetContentRegionAvail().y - dockH - sp;
+    const float dockH = gHostBody ? 0.f : (wide ? 1 : 2) * rowH + (wide ? 0 : sp) + ImGui::GetStyle().WindowPadding.y * 2;
+    const float bodyH = ImGui::GetContentRegionAvail().y - (gHostBody ? 0.f : dockH + sp);
     ImGui::BeginChild("##tbody", ImVec2(0, bodyH), 0);
     const ImVec2 bodyMin = ImGui::GetWindowPos(), bodyMax = ImVec2(bodyMin.x + ImGui::GetWindowSize().x, bodyMin.y + ImGui::GetWindowSize().y);
-    if (hamViewFlag()) hamPanel(a);
+    if (gHostBody) gHostBody(a, disp);
+    else if (hamViewFlag()) hamPanel(a);
     else if (txViewFlag()) txPanel(a);
     else {
         if (disp.y >= disp.x) { statusBar(a); ImGui::Separator(); }   // portrait: the mode's status line on top; landscape keeps the height for the picture (More > Status)
@@ -175,7 +179,7 @@ void shell(App& a, ImVec2 disp) {
     const GestureFrame& g = gesture();
     if (g.swipe && !pressedOnItem() && g.cx >= bodyMin.x && g.cx <= bodyMax.x && g.cy >= bodyMin.y && g.cy <= bodyMax.y && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))
         swipeTabs(-g.swipe);   // swipe left = the next tab
-    dock(a, disp, dockH);
+    if (!gHostBody) dock(a, disp, dockH);
     keypadSheet(a);
     stepSheet(a);
     gainSheet(a);

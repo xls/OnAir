@@ -127,6 +127,13 @@ void endFrame() {
 
 void noteTab(const char* name, bool open) { gTabsNow.emplace_back(name, open); }
 
+int tabCount() { return (int)gTabsLast.size(); }
+const char* tabName(int i, bool* open) {
+    if (i < 0 || i >= (int)gTabsLast.size()) return "";
+    if (open) *open = gTabsLast[(size_t)i].second;
+    return gTabsLast[(size_t)i].first.c_str();
+}
+
 void swipeTabs(int dir) {
     int cur = -1;
     for (size_t i = 0; i < gTabsLast.size(); i++) if (gTabsLast[i].second) cur = (int)i;

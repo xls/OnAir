@@ -4,7 +4,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#import <Foundation/Foundation.h>
+#import <CoreGraphics/CoreGraphics.h>
+#else
 #import <Cocoa/Cocoa.h>
+#endif
 #import <CoreLocation/CoreLocation.h>
 #import <ImageIO/ImageIO.h>
 
@@ -105,11 +111,32 @@ bool decodeImage(const std::string& path, int& w, int& h, std::vector<uint32_t>&
     }
 }
 
+#if TARGET_OS_IPHONE
+bool fetchUrl(const std::string& url, const std::string& file, const std::string& userAgent) {   // no curl program here, and httpRequest() stops at 64 KB
+    @autoreleasepool {
+        NSURL* u = [NSURL URLWithString:[NSString stringWithUTF8String:url.c_str()]];
+        if (!u) return false;
+        NSMutableURLRequest* q = [NSMutableURLRequest requestWithURL:u cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:12];
+        [q setValue:[NSString stringWithUTF8String:userAgent.c_str()] forHTTPHeaderField:@"User-Agent"];
+        __block bool ok = false;
+        NSString* path = [NSString stringWithUTF8String:file.c_str()];
+        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+        [[[NSURLSession sharedSession] dataTaskWithRequest:q completionHandler:^(NSData* d, NSURLResponse* r, NSError* e) {
+            NSHTTPURLResponse* h = [r isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)r : nil;
+            ok = !e && d && h && h.statusCode >= 200 && h.statusCode < 300 && [d writeToFile:path atomically:YES];
+            dispatch_semaphore_signal(sem);
+        }] resume];
+        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)15 * NSEC_PER_SEC));
+        return ok;
+    }
+}
+#else
 bool fetchUrl(const std::string& url, const std::string& file, const std::string& userAgent) {
     auto q = [](const std::string& s) { std::string o = "'"; for (char c : s) { if (c == '\'') o += "'\\''"; else o += c; } return o + "'"; };
     const std::string cmd = "curl -fsSL --max-time 12 -A " + q(userAgent) + " -o " + q(file) + " " + q(url) + " 2>/dev/null";
     return system(cmd.c_str()) == 0;
 }
+#endif
 
 static bool postImpl(const std::string& url, const std::string& json, const std::string& userAgent, std::string* reply) {
     @autoreleasepool {
@@ -202,6 +229,11 @@ HttpResult httpRequest(const std::string& method, const std::string& url, const 
 bool postJson(const std::string& url, const std::string& json, const std::string& userAgent) { return postImpl(url, json, userAgent, nullptr); }
 bool postJsonReply(const std::string& url, const std::string& json, const std::string& userAgent, std::string& reply) { reply.clear(); return postImpl(url, json, userAgent, &reply); }
 
+#if TARGET_OS_IPHONE
+std::string openFileDialog() { return std::string(); }   // platform.h: empty = no dialog (type the path); the Files picker is asynchronous
+std::string openFolderDialog() { return std::string(); }
+std::string saveFileDialog(const char*) { return std::string(); }
+#else
 std::string openFileDialog() {
     NSOpenPanel* p = [NSOpenPanel openPanel];
     p.canChooseFiles = YES; p.canChooseDirectories = NO; p.allowsMultipleSelection = NO;
@@ -222,6 +254,7 @@ std::string saveFileDialog(const char* name) {
     if ([p runModal] == NSModalResponseOK) return std::string(p.URL.path.UTF8String);
     return {};
 }
+#endif
 
 namespace {
 // Never nil: stringWithUTF8String gives nil for bytes that are not UTF-8 (a service name damaged by bit errors), and nil in the dictionary
@@ -294,6 +327,7 @@ struct DefaultsPrefs : Prefs {
 // (the processor check in main.cpp), so it makes the application object itself.
 void showFatalError(const char* title, const char* text) {
     fprintf(stderr, "%s: %s\n", title, text);
+#if !TARGET_OS_IPHONE
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -304,16 +338,22 @@ void showFatalError(const char* title, const char* text) {
         a.informativeText = [NSString stringWithUTF8String:text];
         [a runModal];
     }
+#endif
 }
 
 Prefs& basePrefs() { static DefaultsPrefs p; return p; }
 
 std::vector<std::string> uiFontCandidates() { return {"/System/Library/Fonts/Helvetica.ttc"}; }
+#if TARGET_OS_IPHONE
+std::vector<std::string> cjkFontCandidates() { return {"/System/Library/Fonts/Core/AppleSDGothicNeo.ttc"}; }
+std::vector<std::string> monoFontCandidates() { return {"/System/Library/Fonts/CoreUI/Menlo.ttc"}; }
+#else
 std::vector<std::string> cjkFontCandidates() { return {"/System/Library/Fonts/AppleSDGothicNeo.ttc", "/Library/Fonts/AppleGothic.ttf",
                                                           "/System/Library/Fonts/Supplemental/AppleGothic.ttf", "/System/Library/Fonts/PingFang.ttc",
                                                           "/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
                                                           "/System/Library/Fonts/\xE3\x83\x92\xE3\x83\xA9\xE3\x82\xAE\xE3\x83\x8E\xE8\xA7\x92\xE3\x82\xB4\xE3\x82\xB7\xE3\x83\x83\xE3\x82\xAF W3.ttc"}; }
 std::vector<std::string> monoFontCandidates() { return {"/System/Library/Fonts/Menlo.ttc"}; }
+#endif
 std::string uiLanguage() {
     NSArray<NSString*>* l = [NSLocale preferredLanguages];   // the order of System Settings > Language & Region
     return l.count ? std::string([l[0] UTF8String]) : std::string("en");

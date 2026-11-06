@@ -1,12 +1,14 @@
-// Metal back end (macOS).
+// Metal back end (macOS, and iOS: there the host hands over the layer of its MTKView, setHostLayer()).
 #include "gfx.h"
-#include "imgui_impl_glfw.h"
 #include "imgui_impl_metal.h"
+#include <TargetConditionals.h>
 #define GLFW_INCLUDE_NONE
-#define GLFW_EXPOSE_NATIVE_COCOA
 #include <GLFW/glfw3.h>
+#if !TARGET_OS_IPHONE
+#define GLFW_EXPOSE_NATIVE_COCOA
 #include <GLFW/glfw3native.h>
 #import <Cocoa/Cocoa.h>
+#endif
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
 #include <vector>
@@ -42,6 +44,10 @@ kernel void nv12(texture2d<float, access::read> Y [[texture(0)]], texture2d<floa
 id<MTLDevice> gDevice;
 id<MTLCommandQueue> gQueue;
 id<MTLComputePipelineState> gPso;
+#if TARGET_OS_IPHONE
+CAMetalLayer* gHostLayer = nil;
+bool gBackground = false;   // iOS refuses GPU work from the background: pictures are not converted meanwhile
+#endif
 
 struct MtlImage : Image {
     id<MTLTexture> tex = nil;
@@ -75,6 +81,9 @@ struct MtlVideo : Video {
         [tex replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0 withBytes:rgba bytesPerRow:w * 4];
     }
     bool uploadNV12(const uint8_t* y, const uint8_t* uv, bool bt709, bool fullRange, bool deint) override {
+#if TARGET_OS_IPHONE
+      if (gBackground) return true;
+#endif
       @autoreleasepool {
         if (!gPso) {
             NSError* err = nil;
@@ -98,6 +107,7 @@ struct MtlVideo : Video {
     }
 };
 
+#if !TARGET_OS_IPHONE
 struct MtlSurface : Surface {
     GLFWwindow* win;
     CAMetalLayer* layer;
@@ -136,6 +146,7 @@ struct MtlSurface : Surface {
       }
     }
 };
+#endif
 
 struct MtlBackend : Backend {
     GLFWwindow* win;
@@ -149,6 +160,12 @@ struct MtlBackend : Backend {
         gDevice = MTLCreateSystemDefaultDevice();
         gQueue = [gDevice newCommandQueue];
         ImGui_ImplMetal_Init(gDevice);
+#if TARGET_OS_IPHONE
+        layer = gHostLayer;
+        layer.device = gDevice;
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.framebufferOnly = YES;
+#else
         NSWindow* nswin = glfwGetCocoaWindow(w);
         layer = [CAMetalLayer layer];
         layer.device = gDevice;
@@ -157,6 +174,7 @@ struct MtlBackend : Backend {
         layer.framebufferOnly = [[NSProcessInfo processInfo].arguments containsObject:@"--shot"] ? NO : YES;
         nswin.contentView.layer = layer;
         nswin.contentView.wantsLayer = YES;
+#endif
         rpd = [MTLRenderPassDescriptor new];
     }
     Image* createImage(int w, int h, uint32_t fill) override { return new MtlImage(w, h, fill); }
@@ -199,7 +217,11 @@ struct MtlBackend : Backend {
         drawable = nil; cb = nil; enc = nil;
       }
     }
+#if TARGET_OS_IPHONE
+    Surface* createSurface(GLFWwindow*) override { return nullptr; }   // popout.cpp:121 then gives the window up: no second window on iOS
+#else
     Surface* createSurface(GLFWwindow* w) override { return new MtlSurface(w); }
+#endif
     void shutdown() override { ImGui_ImplMetal_Shutdown(); }
 };
 
@@ -211,5 +233,9 @@ void setLevel(int) {}
 const char* levelName() { return "Metal"; }
 void windowHints() { glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); }
 Backend* create(GLFWwindow* window) { return new MtlBackend(window); }
+#if TARGET_OS_IPHONE
+void setHostLayer(CAMetalLayer* l) { gHostLayer = l; }
+void setBackground(bool on) { gBackground = on; }
+#endif
 
 }

@@ -1,5 +1,5 @@
 /* Stand-ins for the FFmpeg, libusb and libhackrf entry points the core links to. iOS has no USB radios, and FFmpeg is a later step
- * (ios/PLAN.md), so every call fails cleanly with NULL or -1. Video and AAC decoding are therefore off until FFmpeg is built for iOS. */
+ * (ios/PLAN.md), so every call fails cleanly with NULL or -1. The scan calls instead succeed and find nothing, which is the truth here: no USB radios. Video and AAC decoding are therefore off until FFmpeg is built for iOS. */
 #include <stddef.h>
 #include <stdint.h>
 #define KEEP __attribute__((visibility("default"), used))
@@ -87,8 +87,8 @@ KEEP void* hackrf_device_list(void) { return 0; }
 KEEP void hackrf_device_list_free(void) { }
 KEEP const char* hackrf_error_name(void) { return "unavailable"; }
 KEEP const char* hackrf_usb_board_id_name(void) { return "unavailable"; }
-KEEP long hackrf_exit(void) { return -1; }
-KEEP long hackrf_init(void) { return -1; }
+KEEP long hackrf_exit(void) { return 0; }
+KEEP long hackrf_init(void) { return 0; }
 KEEP long hackrf_init_sweep(void) { return -1; }
 KEEP long hackrf_open(void) { return -1; }
 KEEP long hackrf_open_by_serial(void) { return -1; }
@@ -119,11 +119,11 @@ KEEP long libusb_get_active_config_descriptor(void) { return -1; }
 KEEP long libusb_get_bus_number(void) { return -1; }
 KEEP long libusb_get_device_address(void) { return -1; }
 KEEP long libusb_get_device_descriptor(void) { return -1; }
-KEEP long libusb_get_device_list(void) { return -1; }
+KEEP long libusb_get_device_list(void* ctx, void*** list) { static void* none[1] = {NULL}; (void)ctx; if (list) *list = none; return 0; }
 KEEP long libusb_get_device_speed(void) { return -1; }
 KEEP long libusb_get_string_descriptor_ascii(void) { return -1; }
 KEEP long libusb_handle_events_timeout_completed(void) { return -1; }
-KEEP long libusb_init(void) { return -1; }
+KEEP long libusb_init(void** ctx) { static int none; if (ctx) *ctx = &none; return 0; }
 KEEP long libusb_interrupt_event_handler(void) { return -1; }
 KEEP long libusb_kernel_driver_active(void) { return -1; }
 KEEP long libusb_open(void) { return -1; }

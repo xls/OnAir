@@ -5,6 +5,9 @@
 #include "imgui_internal.h"
 #include "ui/touch.h"
 #include "platform/power.h"
+#include "dect2/common/thread_name.h"
+#include "dect2/net/netradio.h"
+#include "dect2/net/remote_api.h"
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #include <cfloat>
@@ -18,7 +21,7 @@ void routeTab(App& a, const std::string& name);                                 
 
 namespace {
 OnAirPage gPage = ONAIR_PAGE_TOUCH_SHELL;
-bool gBackground = false;
+bool gBackground = false, gStarted = false;
 std::string gStatus;
 
 // ---- fingers: the first one is ImGui's mouse; a second one cancels its press, so a pinch never tunes or drags
@@ -43,10 +46,11 @@ void pageBody(App& a, ImVec2) {
     switch (gPage) {
     case ONAIR_PAGE_RECEIVER: overviewTab(a); break;
     case ONAIR_PAGE_TUNER:
-        toolbarParts(a, TbSource | TbTuner | TbGain | TbDecoder, true);
+        toolbarParts(a, TbTuner | TbDecoder, true);
         if (sourceOptionsOpen(a)) sourceOptions(a);
         if (a.devices[a.devIdx].isRadio()) radioSettingsUi(a, true);
         break;
+    case ONAIR_PAGE_GAIN: toolbarParts(a, TbGain, true); break;
     case ONAIR_PAGE_LIST: rightPanel(a); break;
     case ONAIR_PAGE_ANALYSIS: constellationsTab(a); break;
     default: mainTabs(a); break;   // MODE, and SETTINGS under its window
@@ -61,9 +65,20 @@ bool onair_start(void* layer, const char*) {
     static char name[] = "OnAir";
     static char* argv[] = {name, nullptr};
     if (!appRunInit(1, argv)) return false;
+    ImGuiPlatformIO& pio = ImGui::GetPlatformIO();
+    pio.Platform_SetClipboardTextFn = [](ImGuiContext*, const char* text) { UIPasteboard.generalPasteboard.string = @(text); };
+    pio.Platform_GetClipboardTextFn = [](ImGuiContext*) -> const char* {
+        static std::string held;
+        NSString* s = UIPasteboard.generalPasteboard.string;
+        held = s ? s.UTF8String : "";
+        return held.c_str();
+    };
+    gStarted = true;
     appRunApp().touchUi = true;   // main_window.cpp:113 leaves the work area unknown on Apple systems, so autoTouch() never fires
     return true;
 }
+
+bool onair_is_started(void) { return gStarted; }
 
 void onair_frame(void) {
     feedFingers();
@@ -122,6 +137,25 @@ void onair_touch(int id, float x, float y, int phase) {
     }
 }
 
+void onair_net_connect(int type, const char* host, int port) {
+    App& a = appRunApp();
+    if (a.netAddProbe) return;
+    if (a.engine.running()) a.engine.stop();
+    a.netAddType = type;
+    snprintf(a.netAddHost, sizeof a.netAddHost, "%s", host);
+    a.netAddPort = port;
+    a.netAddErr.clear();
+    auto pr = std::make_shared<App::NetProbe>();
+    pr->radio.type = (dect2::NetRadio::Type)type;
+    pr->radio.host = host;
+    pr->radio.port = port;
+    a.netAddProbe = pr;
+    dect2::namedThread("onair-rigprobe", [pr] { std::string e; pr->ok = dect2::probeNetRadio(pr->radio, 3000, e); pr->err = e; pr->done = true; }).detach();
+}
+
+bool onair_net_busy(void) { return appRunApp().netAddProbe != nullptr; }
+const char* onair_net_error(void) { return appRunApp().netAddErr.c_str(); }
+
 void onair_text(const char* utf8) { ImGui::GetIO().AddInputCharactersUTF8(utf8); }
 
 static void tapKey(ImGuiKey k) { ImGuiIO& io = ImGui::GetIO(); io.AddKeyEvent(k, true); io.AddKeyEvent(k, false); }
@@ -133,11 +167,47 @@ int onair_keyboard_kind(void) {
     return st && (st->Flags & ImGuiInputTextFlags_CharsDecimal) ? 1 : 0;
 }
 
+void onair_start_stop(void) {
+    App& a = appRunApp();
+    if (a.engine.running()) a.engine.stop(); else startReceiver(a);
+}
+
+void onair_tune_mhz(double mhz) { tuneFreq(appRunApp(), mhz); }
+
+void onair_set_volume(float volume, bool muted) {
+    App& a = appRunApp();
+    a.volume = volume;
+    a.muted = muted;
+}
+
+int onair_device_count(void) { return (int)appRunApp().devices.size(); }
+const char* onair_device_name(int i) { return appRunApp().devices[(size_t)i].name.c_str(); }
+int onair_device_selected(void) { return appRunApp().devIdx; }
+void onair_device_select(int i) {
+    App& a = appRunApp();
+    if (i == a.devIdx || i < 0 || i >= (int)a.devices.size()) return;
+    const bool wasRunning = a.engine.running();
+    if (wasRunning) a.engine.stop();
+    a.devIdx = i;
+    savePrefs(a);
+    if (wasRunning) startReceiver(a);
+}
+
+int onair_mode_count(void) { return kNumModes; }
+const char* onair_mode_name(int i) { const ModeDef& m = kModes[i]; return m.sub && *m.sub ? m.sub : m.name; }
+const char* onair_mode_group(int i) { const int g = kModes[i].group; return g >= 0 && g < kNumGroups ? kGroupNames[g] : ""; }
+const char* onair_mode_blurb(int i) { return kModes[i].blurb ? kModes[i].blurb : ""; }
+bool onair_mode_is_selected(int i) { return modeSelected(appRunApp(), kModes[i]); }
+void onair_mode_select(int i) { selectMode(appRunApp(), kModes[i].family, kModes[i].subId); }
+
 const char* onair_status_json(void) {
     App& a = appRunApp();
-    char b[160];
-    snprintf(b, sizeof b, "{\"running\":%s,\"mhz\":%.6f}", a.engine.running() ? "true" : "false", a.freqMhz);
-    gStatus = b;
+    std::string mode;
+    for (const auto& m : allModes()) if (modeSelected(a, m)) mode = m.name;
+    const std::string source = a.devIdx >= 0 && a.devIdx < (int)a.devices.size() ? a.devices[(size_t)a.devIdx].name : "";
+    gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
+              dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +
+              ",\"muted\":" + (a.muted ? "true" : "false") + "}";
     return gStatus.c_str();
 }
 
