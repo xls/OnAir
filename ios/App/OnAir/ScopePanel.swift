@@ -88,8 +88,10 @@ private struct ScopeWindow: View {
     var body: some View {
         VStack(spacing: 6) {
             GlassWindow(corner: 6) {
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !running)) { _ in
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !running)) { timeline in
+                    // reading the date inside the canvas is what makes it redraw on every tick
                     Canvas { context, size in
+                        _ = timeline.date
                         draw(in: context, size: size)
                     }
                 }
