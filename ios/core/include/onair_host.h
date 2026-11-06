@@ -87,6 +87,11 @@ void onair_spectrum_scrub(double mhz);                           // an exact fre
 // FM: state 0 searching, 1 tracking, 2 locked; station, radio text, programme type, stereo, snrDb, levelDbfs, rds, rdsOk, traffic
 const char* onair_fm_json(void);
 
+// scopes
+void onair_audio_recent(float* stereo, int frames);              // the last frames played, interleaved, oldest first; about 48 kHz
+int onair_fm_multiplex(float* db, int maxPoints, float* maxHz);  // the FM multiplex spectrum: points written
+int onair_fm_rds_symbols(float* xy, int maxPoints);              // recent RDS symbols, x y pairs: points written
+
 // the active mode's decoded results: summary, cards and tables
 const char* onair_results_json(void);
 

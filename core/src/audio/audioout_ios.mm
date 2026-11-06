@@ -3,15 +3,39 @@
 #include "audioout_impl.h"
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
+#include <algorithm>
 #include <atomic>
 #include <string>
 #include <vector>
 
 namespace dect2 {
 
+// The sound being played, kept for the app's audio scopes. One writer (the render callback); a reader may see a torn frame, which a scope never shows.
+static constexpr uint32_t kTapFrames = 8192;
+static float gTap[kTapFrames * 2];
+static std::atomic<uint32_t> gTapWrite{0};
+
 static OSStatus renderCb(void* ref, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32, UInt32 nFrames, AudioBufferList* io) {
-    static_cast<AudioOut::Impl*>(ref)->render((float*)io->mBuffers[0].mData, nFrames);
+    float* out = (float*)io->mBuffers[0].mData;
+    static_cast<AudioOut::Impl*>(ref)->render(out, nFrames);
+    uint32_t w = gTapWrite.load(std::memory_order_relaxed);
+    for (UInt32 i = 0; i < nFrames; i++, w++) {
+        gTap[(w % kTapFrames) * 2] = out[i * 2];
+        gTap[(w % kTapFrames) * 2 + 1] = out[i * 2 + 1];
+    }
+    gTapWrite.store(w, std::memory_order_release);
     return noErr;
+}
+
+// the last `frames` stereo frames played, oldest first
+void audioIosRecent(float* stereo, int frames) {
+    const uint32_t w = gTapWrite.load(std::memory_order_acquire);
+    const uint32_t n = std::min<uint32_t>((uint32_t)frames, kTapFrames);
+    for (uint32_t i = 0; i < n; i++) {
+        const uint32_t at = (w - n + i) % kTapFrames;
+        stereo[i * 2] = gTap[at * 2];
+        stereo[i * 2 + 1] = gTap[at * 2 + 1];
+    }
 }
 
 // The output most recently started: its real frames played, for the app's status line. Silence is not counted.

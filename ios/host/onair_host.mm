@@ -22,6 +22,7 @@ namespace gfx { void setHostLayer(CAMetalLayer* layer); void setBackground(bool 
 namespace power { void setHostOccluded(bool on); }                                     // ios/platform/power_ios.mm
 void routeTab(App& a, const std::string& name);                                     // ui/main_tabs.cpp
 
+namespace dect2 { void audioIosRecent(float* stereo, int frames); }                   // audioout_ios.mm
 bool settingsIsBound(const settings::Info& i);                                       // ui/settings_window.cpp
 settings::Val settingsRead(App& a, const settings::Info& i);
 void settingsWrite(App& a, const settings::Info& i, const settings::Val& v);
@@ -260,6 +261,26 @@ void onair_spectrum_scrub(double mhz) {
     const double halfSpanMhz = a.engine.sampleRate() / 2e6 * 0.9;
     if (a.engine.running() && std::fabs(mhz - a.engine.captureCentreHz() / 1e6) < halfSpanMhz) tuneDecode(a, mhz);
     else tuneFreq(a, mhz);
+}
+
+void onair_audio_recent(float* stereo, int frames) { dect2::audioIosRecent(stereo, frames); }
+
+int onair_fm_multiplex(float* db, int maxPoints, float* maxHz) {
+    const auto& f = appRunApp().rx.fm;
+    const int n = std::min(maxPoints, (int)f.mpxDb.size());
+    for (int i = 0; i < n; i++) db[i] = f.mpxDb[(size_t)i];
+    *maxHz = f.mpxMaxHz;
+    return n;
+}
+
+int onair_fm_rds_symbols(float* xy, int maxPoints) {
+    const auto& f = appRunApp().rx.fm;
+    const int n = std::min(maxPoints, (int)f.rdsConst.size());
+    for (int i = 0; i < n; i++) {
+        xy[i * 2] = f.rdsConst[(size_t)i].real();
+        xy[i * 2 + 1] = f.rdsConst[(size_t)i].imag();
+    }
+    return n;
 }
 
 const char* onair_fm_json(void) {

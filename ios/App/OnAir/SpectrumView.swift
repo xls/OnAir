@@ -44,7 +44,7 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
 
     private static let binCount = 2048
     private static let historyRows = 512
-    private static let split: Float = 0.15   // the line between trace and waterfall, in clip space
+    private static let split: Float = 0   // the line between trace and waterfall, in clip space: half each
 
     let device: MTLDevice
     private let queue: MTLCommandQueue
@@ -255,8 +255,18 @@ struct SpectrumPage: View {
     @State private var haptics = DetentHaptics()
 
     var body: some View {
+        // three equal parts: the trace and the waterfall share the top two thirds, the scopes have the rest and take no tuning gestures
         GeometryReader { geometry in
-            let width = geometry.size.width
+            VStack(spacing: 0) {
+                spectrumArea(width: geometry.size.width)
+                    .frame(height: geometry.size.height * 2 / 3)
+                ScopePanel(isFM: receiver.status.family == OnAirFamily.fm, running: receiver.status.running)
+                    .frame(height: geometry.size.height / 3)
+            }
+        }
+    }
+
+    private func spectrumArea(width: CGFloat) -> some View {
             ZStack(alignment: .topLeading) {
                 SpectrumMetalView(renderer: spectrum)
                 marker(width: width)
@@ -284,7 +294,6 @@ struct SpectrumPage: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
             }
-        }
     }
 
     private func marker(width: CGFloat) -> some View {
@@ -336,7 +345,7 @@ struct SpectrumPage: View {
         scrubStart = done ? nil : start
         let spanMhz = (spectrum.highHz - spectrum.lowHz) / 1e6
         let fine = scrubStep(spanMhz: spanMhz, width: width)
-        let snapped = ((start - points / width * spanMhz) / fine).rounded() * fine
+        let snapped = ((start + points / width * spanMhz) / fine).rounded() * fine
         guard abs(snapped - lastScrub) >= fine / 2, done || Date().timeIntervalSince(lastTuneTime) > 0.04 else { return }
         lastScrub = done ? 0 : snapped
         lastTuneTime = Date()
