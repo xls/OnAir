@@ -145,35 +145,67 @@ struct TVPage: View {
                 VideoView(renderer: renderer)
                 overlay
             }
-            .aspectRatio(16.0 / 9, contentMode: .fit)
-            sectionBar
-            Group {
-                switch section {
-                case .channels: ChannelList(state: state)
-                case .guide: GuideList(serviceId: state.selected, title: playing?.name ?? "")
-                case .teletext: TeletextView()
-                case .scan: ScanView(receiver: receiver, state: state)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    setFullscreen(!receiver.videoFullscreen, rotate: true)
+                } label: {
+                    Image(systemName: receiver.videoFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial, in: Circle())
                 }
+                .padding(10)
             }
-            .frame(maxHeight: .infinity)
+            .aspectRatio(receiver.videoFullscreen ? nil : 16.0 / 9, contentMode: .fit)
+            .frame(maxWidth: .infinity, maxHeight: receiver.videoFullscreen ? .infinity : nil)
+            if !receiver.videoFullscreen {
+                sectionBar
+                Group {
+                    switch section {
+                    case .channels: ChannelList(state: state)
+                    case .guide: GuideList(serviceId: state.selected, title: playing?.name ?? "")
+                    case .teletext: TeletextView()
+                    case .scan: ScanView(receiver: receiver, state: state)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+            }
         }
-        .background(TV.background)
+        .background(receiver.videoFullscreen ? Color.black.ignoresSafeArea() : TV.background.ignoresSafeArea())
+        .ignoresSafeArea(edges: receiver.videoFullscreen ? .all : [])
         .preferredColorScheme(.dark)
         .onAppear(perform: load)
+        .onDisappear { setFullscreen(false, rotate: true) }
         .onReceive(tick) { _ in load() }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            // turning the phone follows the picture: sideways fills the screen, upright goes back
+            let orientation = UIDevice.current.orientation
+            if orientation.isLandscape && state.selected >= 0 { setFullscreen(true, rotate: false) }
+            if orientation == .portrait { setFullscreen(false, rotate: false) }
+        }
+    }
+
+    private func setFullscreen(_ on: Bool, rotate: Bool) {
+        guard on != receiver.videoFullscreen else { return }
+        receiver.videoFullscreen = on
+        guard rotate, let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: on ? .landscapeRight : .portrait))
     }
 
     @ViewBuilder private var overlay: some View {
-        if let playing {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(playing.name).font(.headline)
-                Text(state.width > 0 ? "\(state.video) \(state.width)×\(state.height) · \(state.audio)\(state.hardware ? " · hardware" : "")" : state.status)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+        if state.selected >= 0 {
+            if !receiver.videoFullscreen {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(playing?.name ?? "").font(.headline)
+                    Text(state.width > 0 ? "\(state.video) \(state.width)×\(state.height) · \(state.audio)\(state.hardware ? " · hardware" : "")" : state.status)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .padding(8)
             }
-            .padding(8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-            .padding(8)
         } else {
             VStack(spacing: 6) {
                 Image(systemName: "tv").font(.largeTitle)

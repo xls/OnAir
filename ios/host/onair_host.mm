@@ -11,6 +11,8 @@
 #include "dect2/channels/tvplan.h"
 #include "platform/platform.h"
 #include "dect2/tv/teletext.h"
+#include "dect2/tx/tx.h"
+#include "dect2/tx/tx_iqfile.h"
 #include "dect2/tv/player.h"
 #include "dect2/tv/ts.h"
 #include <chrono>
@@ -34,6 +36,9 @@ void routeTab(App& a, const std::string& name);                                 
 namespace dect2 { void audioIosRecent(float* stereo, int frames); uint64_t audioIosPlayedFrames(); }                   // audioout_ios.mm
 bool settingsIsBound(const settings::Info& i);                                       // ui/settings_window.cpp
 settings::Val settingsRead(App& a, const settings::Info& i);
+void generalSetDemodWidth(int demod, double widthHz);
+int generalCurrentDemod();
+double generalCurrentWidth();
 std::vector<dect2::FreqEntry> freqdbForCurrentMode(App& a);                           // freqdb/freqdb_ui.cpp
 void settingsWrite(App& a, const settings::Info& i, const settings::Val& v);
 
@@ -43,6 +48,7 @@ OnAirPage gPage = ONAIR_PAGE_TOUCH_SHELL;
 bool gBackground = false, gStarted = false;
 std::string gStatus, gJson, gVideoStatus;
 uint64_t gVideoFrames = 0;
+dect2::TxSession gTx;
 
 // which TV plans fit the mode on screen, and the settings key of the one chosen (the keys of app/bandplan/tvchan_ui.cpp)
 unsigned tvPlanMask(int family, const char** group) {
@@ -492,6 +498,73 @@ void onair_channel_pick(double mhz, double bandwidthMhz) {
     App& a = appRunApp();
     if (bandwidthMhz > 0 && (a.family == 0 || a.family == 40)) onair_tv_bandwidth(bandwidthMhz);
     tuneFreq(a, mhz);
+}
+
+const char* onair_general_json(void) {
+    App& a = appRunApp();
+    const auto& g = a.rx.general;
+    gJson = "{\"demod\":" + std::to_string(generalCurrentDemod()) + ",\"width\":" + textOf(generalCurrentWidth()) + ",\"levelDb\":" + textOf(g.levelDb) + ",\"noiseDb\":" + textOf(g.noiseDb) +
+            ",\"snrDb\":" + textOf(g.snrDb) + ",\"squelchOpen\":" + (g.squelchOpen ? "true" : "false") + "}";
+    return gJson.c_str();
+}
+
+void onair_general_set(int demod, double widthHz) { generalSetDemodWidth(demod, widthHz); }
+
+bool onair_tx_supported(void) {
+    App& a = appRunApp();
+    const ModeDef* cur = nullptr;
+    for (const auto& m : allModes()) if (modeSelected(a, m)) cur = &m;
+    return cur && dect2::txModeForList(cur->family, cur->subId) != nullptr;
+}
+
+bool onair_tx_start(const OnAirTxRequest* q, char* err, int errSize) {
+    App& a = appRunApp();
+    auto fail = [&](const std::string& why) { snprintf(err, (size_t)errSize, "%s", why.c_str()); return false; };
+    const ModeDef* cur = nullptr;
+    for (const auto& m : allModes()) if (modeSelected(a, m)) cur = &m;
+    const dect2::TxModeSpec* spec = cur ? dect2::txModeForList(cur->family, cur->subId) : nullptr;
+    if (!spec) return fail("This mode has no transmitter");
+    dect2::TxRequest r;
+    r.modeId = spec->id;
+    r.tune.centerHz = q->mhz * 1e6;
+    r.tune.gainDb = q->gainDb;
+    r.loop = q->seconds <= 0;
+    r.onceSeconds = q->seconds;
+    r.callsign = q->callsign ? q->callsign : "";
+    r.grid = q->grid ? q->grid : "";
+    r.text = q->text ? q->text : "";
+    r.dest = q->dest ? q->dest : "";
+    r.kind = q->kind;
+    r.wpm = q->wpm > 0 ? q->wpm : 20;
+    std::unique_ptr<dect2::TxSink> sink;
+    dect2::TxRateLimits limits;
+    if (q->iqPath && *q->iqPath) {
+        dect2::IqFileTxConfig c;
+        c.path = q->iqPath;
+        c.centerHz = r.tune.centerHz;
+        c.paced = false;
+        c.description = spec->id;
+        sink = std::make_unique<dect2::IqFileTxSink>(c);
+    } else {
+        const DeviceInfo& d = a.devices[(size_t)a.devIdx];
+        if (!d.canTransmit) return fail("This radio cannot transmit");
+        sink = dect2::makeTxSink(d);
+        if (!sink) return fail("This radio cannot transmit");
+        limits = dect2::TxRateLimits{d.txMinRateHz, d.txMaxRateHz};
+    }
+    std::string why;
+    gTx.stop();
+    if (!gTx.start(std::move(sink), r, limits, why)) return fail(why.empty() ? "The transmission could not start" : why);
+    return true;
+}
+
+void onair_tx_stop(void) { gTx.stop(); }
+
+const char* onair_tx_json(void) {
+    const dect2::TxSession::Stats st = gTx.stats();
+    gJson = std::string("{\"running\":") + (gTx.running() ? "true" : "false") + ",\"seconds\":" + textOf(st.seconds) + ",\"samples\":" + std::to_string(st.samples) +
+            ",\"peak\":" + textOf(st.peak) + ",\"failed\":" + (st.failed ? "true" : "false") + ",\"error\":" + quoted(st.error) + "}";
+    return gJson.c_str();
 }
 
 const char* onair_results_json(void) {

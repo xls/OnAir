@@ -7,6 +7,13 @@ enum OnAirFamily {
     static let television: Set<Int> = [0, 1, 3, 4, 6, 7, 40]
 }
 
+extension OnAirFamily {
+    /// HF digital, CW, PSK, JS8Call and friends, and the general receiver for voice.
+    static let hamFamilies: Set<Int> = [25, 34, 36, 37, 95, 113, 116, 119, 140, 205]
+
+    static func isHam(family: Int, mode: String) -> Bool { hamFamilies.contains(family) || mode == "General receiver" }
+}
+
 enum Tab: CaseIterable, Identifiable {
     case device, spectrum, mode, settings
     var id: Self { self }
@@ -36,18 +43,24 @@ struct RootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            StatusStrip(receiver: receiver)
-            if tab == .device {
-                ChipRow(selection: $devicePage)
+            if !receiver.videoFullscreen {
+                StatusStrip(receiver: receiver)
+                if tab == .device {
+                    ChipRow(selection: $devicePage)
+                }
             }
             ZStack {
                 OnAirView().opacity(0).allowsHitTesting(false)
                 Color.black
                 nativePage
             }
-            BottomBar(tab: $tab, modeName: receiver.status.mode)
+            if !receiver.videoFullscreen {
+                BottomBar(tab: $tab, modeName: receiver.status.mode)
+            }
         }
         .background(BrushedMetal(tone: 0.46).ignoresSafeArea())
+        .statusBarHidden(receiver.videoFullscreen)
+        .persistentSystemOverlays(receiver.videoFullscreen ? .hidden : .automatic)
         .onReceive(tick) { _ in
             guard onair_is_started() else { return }
             if !started {
@@ -86,6 +99,8 @@ struct RootView: View {
                 FMRadioPage(receiver: receiver)
             } else if OnAirFamily.television.contains(receiver.status.family) {
                 TVPage(receiver: receiver)
+            } else if OnAirFamily.isHam(family: receiver.status.family, mode: receiver.status.mode) {
+                HamPage(receiver: receiver, spectrum: spectrum)
             } else {
                 ModeResultsPage(receiver: receiver)
             }
@@ -107,6 +122,7 @@ struct RootView: View {
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--start") { receiver.startStop() }
         if let file = value("--ts") { onair_tv_play_file(file) }
+        if let path = value("--tx-file") { transmitToFile(path, mode: value("--mode") ?? "") }
         if args.contains("--mode") {
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
                 MainActor.assumeIsolated {
@@ -115,6 +131,20 @@ struct RootView: View {
                 }
             }
         }
+    }
+
+    /// Runs the transmit chain into an IQ file, so nothing goes on air: used to check a mode's transmitter from the Mac.
+    private func transmitToFile(_ path: String, mode: String) {
+        var err = [CChar](repeating: 0, count: 256)
+        let ok = "VK2TST".withCString { call in
+            "QF56".withCString { grid in
+                path.withCString { file in
+                    var request = OnAirTxRequest(mhz: receiver.status.mhz, gainDb: -30, seconds: 3, callsign: call, grid: grid, text: nil, dest: nil, kind: 0, wpm: 20, iqPath: file)
+                    return onair_tx_start(&request, &err, Int32(err.count))
+                }
+            }
+        }
+        NSLog("OnAirVerify txfile %@ ok=%d %@", mode, ok ? 1 : 0, String(cString: err))
     }
 
     /// `--page settings`, `--page gain` and so on open a page at launch, for checking screens from the Mac.

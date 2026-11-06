@@ -118,6 +118,27 @@ const char* onair_channels_json(void);
 void onair_channel_plan_set(const char* planId);
 void onair_channel_pick(double mhz, double bandwidthMhz);        // tunes, and sets the plan's channel width where the mode has one
 
+// The general receiver (SSB, CW, AM, FM). Levels in dBFS; demod as GeneralDemod: 0 NFM, 1 WFM, 2 AM, 3 USB, 4 LSB, 5 CW
+const char* onair_general_json(void);
+void onair_general_set(int demod, double widthHz);
+
+// Transmit, through OnAir's transmit session. mode: "" is the current mode. iqPath non-empty writes the signal to that file instead of the radio.
+// Returns false with err in plain words. Nothing is sent unless the radio can transmit. seconds: one pass, 0 until stopped.
+typedef struct {
+    double mhz, gainDb, seconds;
+    const char* callsign;
+    const char* grid;
+    const char* text;
+    const char* dest;
+    int kind;                            // FT8: 0 CQ, 1 report, 2 free text
+    int wpm;
+    const char* iqPath;
+} OnAirTxRequest;
+bool onair_tx_supported(void);                                   // the current mode has a transmitter
+bool onair_tx_start(const OnAirTxRequest* request, char* err, int errSize);
+void onair_tx_stop(void);
+const char* onair_tx_json(void);                                 // running, seconds, peak, failed, error
+
 // the active mode's decoded results: summary, cards and tables
 const char* onair_results_json(void);
 

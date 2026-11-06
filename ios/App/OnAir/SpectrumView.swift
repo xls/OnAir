@@ -167,7 +167,7 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
     }
 }
 
-private struct SpectrumMetalView: UIViewRepresentable {
+struct SpectrumMetalView: UIViewRepresentable {
     let renderer: SpectrumRenderer
 
     func makeUIView(context: Context) -> MTKView {

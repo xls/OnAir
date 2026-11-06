@@ -17,6 +17,7 @@ final class Receiver {
 
     private(set) var status = Status()
     private(set) var devices: [String] = []
+    var videoFullscreen = false
 
     func refresh() {
         guard let text = onair_status_json() else { return }

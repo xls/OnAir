@@ -898,3 +898,12 @@ const ModeUi kGeneralUi = {
     .tick = tick,
     .meters = meters,
 };
+
+// the receiver's demodulator and width from a native screen (ios/host); the per-frame push above then keeps them
+void generalSetDemodWidth(int demod, double widthHz) {
+    load();
+    setDemod(demod);
+    if (widthHz > 0) S.width[S.demod] = widthHz;
+}
+int generalCurrentDemod() { load(); return S.demod; }
+double generalCurrentWidth() { load(); return S.width[S.demod]; }
