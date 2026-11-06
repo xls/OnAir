@@ -92,9 +92,17 @@ library in the iOS SDK, and it would still need `DynLib` changes.
 - Commands needed: `PRINT`, `TIMEOUT`, `READ`, `WRITE`, `SET ... BUFFERS_COUNT`, `OPEN`, `READBUF`, `CLOSE`.
 - Stub the scan functions. Leave out `iio_buffer_push`, so no transmit.
 - `IioApi::ok` requires the scan functions, and the loader needs a path that does not use `dlopen`.
-- The protocol details came from a summary of libiio v0.26, not line-by-line reading. Capture real traffic from a desktop session and test
-  against a real Pluto early.
 - `192.168.2.1` is the USB-gadget link, unproven on iPhone. Assume Wi-Fi or Ethernet.
+
+Checked against the real radio at `192.168.10.9`, an ANTSDR Rev.C (Zynq 7020, AD9361, firmware v0.39-1-g7bcc-dirty, iiod 0.26):
+
+- `VERSION`, `PRINT`, `READ`, `TIMEOUT`, `SET ... BUFFERS_COUNT`, `OPEN`, `READBUF` and `CLOSE` all work as described, using ids such as
+  `iio:device1` (`ad9361-phy`) and `iio:device4` (`cf-ad9361-lpc`). `WRITE` has not been tried.
+- **`READBUF` replies with `<count>\n<mask>\n<payload>` on every call**, not only the first. The mask for `voltage0` and `voltage1` is `00000003`.
+- Samples are little-endian `S12/16`. `lpc` has four channels, voltage0 to voltage3, so a second RX path exists.
+- `frequency_available` is 70 to 6000 MHz. Sample rate is 2.083 to 30.72 Msps.
+- A test client on the Mac over Wi-Fi 6E received 9.7 Msps sustained with 256 Ki-sample buffers and 15.2 Msps with 1 Mi-sample buffers,
+  over 1 to 2 second runs. Larger buffers matter.
 
 ## rtl_tcp
 
@@ -103,15 +111,15 @@ library in the iOS SDK, and it would still need `DynLib` changes.
 
 ## Bandwidth limits the UI cannot fix
 
-| Mode | Rate needed | rtl_tcp (max 2.56 Msps) | Pluto over USB-gadget network (3 Msps) | Pluto on a real network |
+| Mode | Rate needed | rtl_tcp (max 2.56 Msps) | Stock Pluto over USB-gadget network (3 Msps) | ANTSDR on Ethernet |
 |---|---|---|---|---|
 | FM | 2.4 Msps | Yes | Yes | Yes |
 | DAB | 2.048 Msps | Yes | Yes | Yes |
-| DVB-T, ATSC, ISDB-T | At least 6.5 to 7.9 Msps | **No** | **No** | Only on a fast link |
+| DVB-T, ATSC, ISDB-T | At least 6.5 to 7.9 Msps | **No** | **No** | Possibly, see below |
 
-DVB-T at 7.9 Msps is about 253 Mbit/s in 16-bit samples, or about 126 Mbit/s in the 8-bit format that needs Tezuka firmware. That requires
-something like a Pluto+ on Gigabit Ethernet plus strong Wi-Fi, and phone CPU load at that rate is unmeasured. TV pages can still be built and
-tested with the built-in synthetic signal. DVB-S on a 1.5 Msym/s signal such as the QO-100 beacon is a lower-rate TV option.
+DVB-T at 7.9 Msps is about 253 Mbit/s in 16-bit samples. The ANTSDR delivered 310 to 487 Mbit/s to the Mac over Wi-Fi 6E in short runs, so
+this radio may carry it, unlike a stock Pluto. Not yet measured: the same rate to the iPhone, sustained for minutes, and whether the phone can
+decode it in real time. TV pages can still be built and tested with the built-in synthetic signal.
 
 ## Phases
 
@@ -181,7 +189,3 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 ios/tools/build_core.sh            # ios/build/OnAirCore.xcframework
 cd ios && xcodegen                 # OnAir.xcodeproj
 ```
-
-## Open questions
-
-1. **Which Pluto?** Stock or Pluto+, and how it reaches the network, sets which modes are possible.
