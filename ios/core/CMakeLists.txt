@@ -13,7 +13,8 @@ set(DECT2_BUNDLE_CODEC2 OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${_onair_repo}" "${CMAKE_BINARY_DIR}/onair-core" EXCLUDE_FROM_ALL)
 
-add_library(onair_ios STATIC src/onair_core.mm src/stubs_ext.c)
+set(ONAIR_IIO_SYMBOLS "" CACHE FILEPATH "Generated table of libiio functions (build_core.sh)")
+add_library(onair_ios STATIC src/onair_core.mm src/stubs_ext.c "${ONAIR_IIO_SYMBOLS}")
 set_target_properties(onair_ios PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OBJCXX_STANDARD 20)
 target_include_directories(onair_ios PRIVATE "${_onair_repo}/core/include" include src)
 target_compile_options(onair_ios PRIVATE -O2 -Wall)

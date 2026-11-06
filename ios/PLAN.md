@@ -81,24 +81,18 @@ Design rules from the prototype:
 
 ## Pluto
 
-The desktop reaches a Pluto through libiio, loaded at run time. The repo has no iiod code of its own and no libiio.
+Uses stock **libiio 0.26**, the same library and version as the desktop and the radio's iiod. `tools/build_core.sh` fetches it and builds it
+for iOS unchanged, with the network backend only and the SDK's libxml2. `core/src/source/source_plutosdr.cpp` is unchanged.
 
-**Decision: write a small iiod-over-TCP client** (port 30431) in `ios/`, about 300 to 500 lines on `core/src/net/tcp_client.h`, and expose it
-through the same function table (`IioApi`, `core/src/source/source_plutosdr.cpp:11-46`). `source_plutosdr.cpp` stays nearly unchanged, so all
-its tuning, gain and rate logic carries over. Cross-building libiio was rejected: it needs libxml2, which has headers but no confirmed link
-library in the iOS SDK, and it would still need `DynLib` changes.
+iOS cannot load a loose library, so the build generates a table of libiio's functions (`iio_symbols.c`), and `DynLib` in
+`core/src/source/native_common.h` looks them up there. That is the only shared-code change.
 
-- Use two sockets, control and data, as libiio does, so a blocked refill cannot hold up a retune.
-- Commands needed: `PRINT`, `TIMEOUT`, `READ`, `WRITE`, `SET ... BUFFERS_COUNT`, `OPEN`, `READBUF`, `CLOSE`.
-- Stub the scan functions. Leave out `iio_buffer_push`, so no transmit.
-- `IioApi::ok` requires the scan functions, and the loader needs a path that does not use `dlopen`.
-- `192.168.2.1` is the USB-gadget link, unproven on iPhone. Assume Wi-Fi or Ethernet.
+**Principle for this port:** reuse existing libraries and OnAir code, write only what iOS needs, and keep shared-file edits small so upstream
+changes keep merging.
 
 Checked against the real radio at `192.168.10.9`, an ANTSDR E310 (reports as ANTSDR Rev.C; Zynq 7020, AD9361, firmware v0.39-1-g7bcc-dirty, iiod 0.26):
 
-- `VERSION`, `PRINT`, `READ`, `TIMEOUT`, `SET ... BUFFERS_COUNT`, `OPEN`, `READBUF` and `CLOSE` all work as described, using ids such as
-  `iio:device1` (`ad9361-phy`) and `iio:device4` (`cf-ad9361-lpc`). `WRITE` has not been tried.
-- **`READBUF` replies with `<count>\n<mask>\n<payload>` on every call**, not only the first. The mask for `voltage0` and `voltage1` is `00000003`.
+- The app receives a real FM station through it on the simulator: TRIPLE M, 104.9 MHz, locked, stereo, 60 dB SNR.
 - Samples are little-endian `S12/16`. `lpc` has four channels, voltage0 to voltage3, so a second RX path exists.
 - `frequency_available` is 70 to 6000 MHz. Sample rate is 2.083 to 30.72 Msps.
 - A test client on the Mac over Wi-Fi 6E received 9.7 Msps sustained with 256 Ki-sample buffers and 15.2 Msps with 1 Mi-sample buffers,
@@ -132,17 +126,17 @@ Each phase ends with something runnable.
 - Stub FFmpeg, libusb and libhackrf. Set `DECT2_BUNDLE_CODEC2=OFF`.
 - **Done when:** the engine plays the synthetic FM signal through audio on a real iPhone.
 
-### 2. The existing UI on the phone
+### 2. Real radios
+- Pluto through libiio, reached from the test screen. Done on the simulator; phone pending.
+- Connect rtl_tcp to a real server over Wi-Fi.
+- **Done when:** FM from each radio plays on the phone for 30 minutes with no dropped-sample warnings.
+
+### 3. The existing UI on the phone
 - Apply `ios/spike/ui/`: GLFW shim, `main.cpp` split into init/frame/shutdown, `gfx_metal.mm` host layer, power and AirPlay stubs.
 - Link `app/` with `dect2core`, plus `onair_web` or a stub. Disable updater, plugins, webshare and Discord.
 - Forward touch and `UIKeyInput`, and add the clipboard hooks.
 - Avoid the blocking `refreshDevices` at startup (`app/main_start.cpp:80`), which risks the iOS watchdog.
 - **Done when:** the unchanged touch shell runs full-screen on the iPhone with the synthetic signal, and the spectrum responds to touch.
-
-### 3. Real radios
-- Connect rtl_tcp to a real server over Wi-Fi with the local network permission.
-- Write the iiod client and connect to a real Pluto.
-- **Done when:** FM from each radio plays on the phone for 30 minutes with no dropped-sample warnings.
 
 ### 4. Navigation shell
 - SwiftUI status strip, custom bar, chip row, slot-sized view.
@@ -184,7 +178,7 @@ This is likely the largest phase. The touch shell targets 800 x 480 and up; an i
 ## Build
 
 ```sh
-brew install cmake ninja pkg-config hackrf libusb ffmpeg xcodegen   # hackrf, libusb and ffmpeg: headers only
+brew install cmake ninja pkg-config hackrf libusb ffmpeg xcodegen   # hackrf, libusb and ffmpeg: headers only; libiio is fetched by the script
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 ios/tools/build_core.sh            # ios/build/OnAirCore.xcframework
 cd ios && xcodegen                 # OnAir.xcodeproj

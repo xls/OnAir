@@ -2,8 +2,17 @@ import OnAirCore
 import OSLog
 import SwiftUI
 
-/// The first screen: proves the receiver and its sound run on the phone. Phase 2 replaces it with the real interface.
+enum RadioKind: String, CaseIterable, Identifiable {
+    case test = "Test signal", pluto = "Pluto", rtlTcp = "rtl_tcp"
+    var id: Self { self }
+}
+
+/// A plain test screen: proves the receiver, its sound and the two network radios on the phone. Phase 2 replaces it.
 struct ContentView: View {
+    @AppStorage("radioKind") private var kind = RadioKind.pluto
+    @AppStorage("host") private var host = "192.168.10.9"
+    @AppStorage("rtlPort") private var rtlPort = "1234"
+    @AppStorage("freqMhz") private var freqMhz = "100.0"
     @State private var running = false
     @State private var status = "stopped"
     @State private var problem = ""
@@ -11,27 +20,57 @@ struct ContentView: View {
     private let log = Logger(subsystem: "net.rizos.onair", category: "core")
 
     var body: some View {
-        VStack(spacing: 24) {
-            Text("OnAir").font(.largeTitle.monospaced())
-            Text("FM test signal: 1 kHz left, 3 kHz right").foregroundStyle(.secondary)
+        Form {
+            Picker("Source", selection: $kind) {
+                ForEach(RadioKind.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            if kind != .test {
+                TextField("Address", text: $host).keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
+            }
+            if kind == .rtlTcp {
+                TextField("Port", text: $rtlPort).keyboardType(.numberPad)
+            }
+            LabeledContent("FM MHz") {
+                TextField("MHz", text: $freqMhz).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+            }
             Button(running ? "Stop" : "Start") { running ? stop() : start() }
-                .buttonStyle(.borderedProminent)
-            Text(status).font(.footnote.monospaced()).multilineTextAlignment(.center)
-            if !problem.isEmpty { Text(problem).foregroundStyle(.red) }
+            Section {
+                Text(status).font(.footnote.monospaced())
+                if !problem.isEmpty { Text(problem).foregroundStyle(.red) }
+            }
         }
-        .padding()
         .onAppear {
             onair_core_init(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].path)
-            if ProcessInfo.processInfo.arguments.contains("--autostart") { start() }
+            applyLaunchArguments()
         }
         .onReceive(tick) { _ in refresh() }
     }
 
-    private func start() {
-        var err = [CChar](repeating: 0, count: 256)
-        // Engine start can take a moment, and the main thread must never wait for it
+    private var radioSpec: String {
+        switch kind {
+        case .test: return ""
+        case .pluto: return "pluto,\(host),0"
+        case .rtlTcp: return "rtltcp,\(host),\(rtlPort)"
+        }
+    }
+
+    /// `--radio <spec> --freq <MHz>` starts reception at launch, for testing from the Mac.
+    private func applyLaunchArguments() {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--radio"), i + 1 < args.count else { return }
+        if let f = args.firstIndex(of: "--freq"), f + 1 < args.count { freqMhz = args[f + 1] }
+        start(spec: args[i + 1] == "test" ? "" : args[i + 1])
+    }
+
+    private func start(spec: String? = nil) {
+        let spec = spec ?? radioSpec
+        let mhz = Double(freqMhz) ?? 100
+        problem = ""
+        // Connecting can take seconds, and the main thread must never wait for it
         DispatchQueue.global(qos: .userInitiated).async {
-            let ok = onair_core_start_fm_test(&err, Int32(err.count))
+            var err = [CChar](repeating: 0, count: 256)
+            let ok = onair_core_start_fm(spec, mhz, &err, Int32(err.count))
             if ok { onair_core_set_volume(0.5) }
             let message = ok ? "" : String(cString: err)
             DispatchQueue.main.async { problem = message }

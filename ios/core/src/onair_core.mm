@@ -5,6 +5,8 @@
 #include <string>
 
 #include "dect2/engine/engine.h"
+#include "dect2/net/netradio.h"
+
 
 namespace dect2 { uint64_t audioIosPlayedFrames(); }   // audioout_ios.mm
 
@@ -35,18 +37,29 @@ void onair_core_init(const char* dataDir) {
     if (dataDir && *dataDir) gCore->eng.setResultsDir(dataDir);
 }
 
-bool onair_core_start_fm_test(char* err, int errSize) {
+bool onair_core_start_fm(const char* radioSpec, double freqMhz, char* err, int errSize) {
     std::lock_guard<std::mutex> lk(gCore->mu);
     Engine& e = gCore->eng;
     if (e.running()) e.stop();
     DeviceInfo dev;
-    dev.kind = DeviceInfo::Synthetic;
-    dev.name = "Test signal";
     TuneSettings tune;
-    tune.centerHz = 100e6;
-    tune.sampleRate = 4e6;
+    tune.centerHz = freqMhz * 1e6;
     tune.bandwidthMhz = 0.25;
-    tune.synth.mode = kFmStandard;
+    if (radioSpec && *radioSpec) {
+        const auto radios = netRadiosFromString(radioSpec);
+        const auto found = radios.empty() ? std::vector<DeviceInfo>() : netRadioDevices({radios[0]});
+        if (found.empty()) { copyOut("The radio's address is not valid", err, errSize); return false; }
+        dev = found[0];
+        dev.network = true;
+        tune.sampleRate = 2.4e6;
+        tune.gainDb = 40;
+        tune.radio["gainmode"] = "slow_attack";   // the AD9361's own AGC; rtl_tcp ignores it
+    } else {
+        dev.kind = DeviceInfo::Synthetic;
+        dev.name = "Test signal";
+        tune.sampleRate = 4e6;
+        tune.synth.mode = kFmStandard;
+    }
     e.setStandard(kFmStandard);
     gCore->specSeq = gCore->frames = 0;
     const bool ok = e.start(dev, tune, FileOptions());

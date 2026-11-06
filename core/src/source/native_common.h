@@ -38,6 +38,7 @@
 #include <unistd.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
+#include <TargetConditionals.h>
 #endif
 #define DECT2_CALL
 #endif
@@ -47,6 +48,10 @@ namespace dect2 {
 namespace native {
 
 // ------------------------------------------------------------------ loading a library at run time
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+extern "C" void* onair_linked_symbol(const char* name);   // ios/core: a function of a library linked into the app
+#endif
 
 struct DynLib {
     void* h = nullptr;
@@ -61,6 +66,10 @@ struct DynLib {
             }
             return false;
         }
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+        // iOS loads no loose libraries: libiio is linked into the app, and ios/core provides its functions by name
+        for (const auto& n : names) if (base(n).find("libiio") == 0) { h = this; path = "libiio (linked)"; return true; }
+#endif
         // The outcome always goes to the log (stderr; onair.log on Windows): when a radio does not show up, this says which library was used or why none was
         for (const auto& n : names) if (tryOpen(n)) { fprintf(stderr, "radio library: %s\n", n.c_str()); fflush(stderr); return true; }
 #if defined(__APPLE__)
@@ -100,7 +109,9 @@ private:
     bool warned_ = false;
     void* sym(const char* name) const {
         if (!h) return nullptr;
-#ifdef _WIN32
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+        return h == this ? onair_linked_symbol(name) : dlsym(h, name);
+#elif defined(_WIN32)
         return reinterpret_cast<void*>(GetProcAddress((HMODULE)h, name));
 #else
         return dlsym(h, name);

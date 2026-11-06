@@ -30,6 +30,7 @@ targets:
       - sdk: libc++.tbd
       - sdk: libz.tbd
       - sdk: libiconv.tbd
+      - sdk: libxml2.tbd
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.rizos.onair

@@ -7,8 +7,10 @@ extern "C" {
 
 // Once at launch. dataDir: a writable folder for results.
 void onair_core_init(const char* dataDir);
-// Starts the built-in FM test signal: 1 kHz left, 3 kHz right. Returns false and fills err on failure.
-bool onair_core_start_fm_test(char* err, int errSize);
+// Starts FM reception. radioSpec "" is the built-in test signal (1 kHz left, 3 kHz right); otherwise the core's network radio text:
+// "pluto,192.168.10.9,0" or "rtltcp,192.168.1.5,1234". May block for seconds: never call it on the main thread.
+// Returns false and fills err on failure.
+bool onair_core_start_fm(const char* radioSpec, double freqMhz, char* err, int errSize);
 void onair_core_stop(void);
 bool onair_core_running(void);
 void onair_core_set_volume(float volume01);
