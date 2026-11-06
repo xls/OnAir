@@ -30,6 +30,7 @@ targets:
       properties:
         UIBackgroundModes: [audio]
         NSLocationWhenInUseUsageDescription: OnAir centres its maps on where you are.
+        NSMicrophoneUsageDescription: OnAir sends your voice when you transmit.
     dependencies:
       - framework: build/OnAirCore.xcframework
         embed: false

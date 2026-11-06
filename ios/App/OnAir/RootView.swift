@@ -167,7 +167,7 @@ struct RootView: View {
         let ok = "VK2TST".withCString { call in
             "QF56".withCString { grid in
                 path.withCString { file in
-                    var request = OnAirTxRequest(mhz: receiver.status.mhz, gainDb: -30, seconds: 3, callsign: call, grid: grid, text: nil, dest: nil, kind: 0, wpm: 20, iqPath: file)
+                    var request = OnAirTxRequest(mhz: receiver.status.mhz, gainDb: -30, seconds: 3, callsign: call, grid: grid, text: nil, dest: nil, kind: 0, wpm: 20, microphone: false, iqPath: file)
                     return onair_tx_start(&request, &err, Int32(err.count))
                 }
             }

@@ -20,6 +20,7 @@ typedef enum {
 // lifecycle
 bool onair_start(void* caMetalLayer, const char* resourceDir);   // once, from the first layout (the view has a size)
 bool onair_is_started(void);
+bool onair_running(void);
 void onair_frame(void);                                          // MTKViewDelegate draw, and the background timer
 void onair_set_background(bool background);                      // scenePhase: no Metal work while true; flushes the settings
 void onair_flush(void);                                          // settings and results to disk (may be killed after this)
@@ -133,6 +134,7 @@ typedef struct {
     const char* dest;
     int kind;                            // FT8: 0 CQ, 1 report, 2 free text
     int wpm;
+    bool microphone;                     // the voice comes from the microphone
     const char* iqPath;
 } OnAirTxRequest;
 bool onair_tx_supported(void);                                   // the current mode has a transmitter

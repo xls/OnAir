@@ -276,7 +276,7 @@ struct TransmitSheet: View {
                 Text(problem).font(.footnote).foregroundStyle(.red)
             }
             HardwareKey(lit: status.running, led: .red, action: toggle) {
-                EngravedLabel(text: status.running ? String(format: "ON AIR %.0f s  STOP", status.seconds) : armed ? "SEND" : "NOT ARMED", size: 11)
+                EngravedLabel(text: status.running ? String(format: "ON AIR %.0f s  STOP", status.seconds) : armed ? (isVoice ? "TALK" : "SEND") : "NOT ARMED", size: 11)
             }
             .frame(height: 64)
             .disabled(!armed && !status.running)
@@ -306,6 +306,19 @@ struct TransmitSheet: View {
         }
     }
 
+    private var isVoice: Bool { receiver.status.mode == "General receiver" }
+
+    /// The transmitter's voice kinds: 0 FM, 1 AM, 2 USB, 3 LSB. The receiver's demodulator says which.
+    private var voiceKind: Int32? {
+        guard isVoice, let text = onair_general_json(), let g = try? JSONDecoder().decode(General.self, from: Data(String(cString: text).utf8)) else { return nil }
+        switch g.demod {
+        case 2: return 1
+        case 3: return 2
+        case 4: return 3
+        default: return 0
+        }
+    }
+
     private func toggle() {
         if status.running {
             onair_tx_stop()
@@ -316,7 +329,7 @@ struct TransmitSheet: View {
         let ok: Bool = callsign.withCString { call in
             grid.withCString { locator in
                 text.withCString { message in
-                    var request = OnAirTxRequest(mhz: receiver.status.mhz, gainDb: gain, seconds: 15, callsign: call, grid: locator, text: message, dest: nil, kind: text.isEmpty ? 0 : 2, wpm: 20, iqPath: nil)
+                    var request = OnAirTxRequest(mhz: receiver.status.mhz, gainDb: gain, seconds: isVoice ? 0 : 15, callsign: call, grid: locator, text: message, dest: nil, kind: voiceKind ?? (text.isEmpty ? 0 : 2), wpm: 20, microphone: isVoice, iqPath: nil)
                     return onair_tx_start(&request, &err, Int32(err.count))
                 }
             }

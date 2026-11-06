@@ -162,6 +162,7 @@ bool onair_start(void* layer, const char*) {
 }
 
 bool onair_is_started(void) { return gStarted; }
+bool onair_running(void) { return gStarted && appRunApp().engine.running(); }
 
 void onair_frame(void) {
     feedFingers();
@@ -172,8 +173,11 @@ void onair_flush(void) { appRunFlush(); }
 
 void onair_set_background(bool background) {
     gBackground = background;
-    ::power::setHostOccluded(background);   // the frame then ends in skipFrame() (main.cpp:429), the receivers keep ticking at 10 Hz
-    gfx::setBackground(background);
+    App& a = appRunApp();
+    const bool hidden = background || gPage == ONAIR_PAGE_NONE;
+    ::power::setHostOccluded(hidden);   // the frame then ends in skipFrame() (main.cpp:429), the receivers keep ticking
+    gfx::setBackground(hidden);
+    a.engine.setComputeMode(background ? 0 : a.computeMode);   // iOS allows no GPU work in the background: the FEC decoders run on the CPU
     dect2::power::setAppHidden(false);      // the policy of the engine must not slow a receiver the user wants to hear
     if (background) onair_flush();
 }
@@ -555,6 +559,7 @@ bool onair_tx_start(const OnAirTxRequest* q, char* err, int errSize) {
     r.dest = q->dest ? q->dest : "";
     r.kind = q->kind;
     r.wpm = q->wpm > 0 ? q->wpm : 20;
+    if (q->microphone) r.audioSrc = 0;
     std::unique_ptr<dect2::TxSink> sink;
     dect2::TxRateLimits limits;
     if (q->iqPath && *q->iqPath) {

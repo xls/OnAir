@@ -537,7 +537,7 @@ if(APPLE)
   target_sources(dect2core PRIVATE core/src/dsp/gpu_ldpc.mm core/src/dsp/gpu_viterbi.mm core/src/audio/videoin_avfoundation.mm core/src/tv/conceal_apple.mm core/src/tv/iptv_http_cocoa.mm core/src/power/power_apple.mm)
   if(IOS)   # RemoteIO and AVAudioSession; receive only, so no microphone
     target_sources(dect2core PRIVATE core/src/audio/audioout_ios.mm core/src/audio/audioin_ios.mm)
-    set_source_files_properties(core/src/audio/audioout_ios.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+    set_source_files_properties(core/src/audio/audioout_ios.mm core/src/audio/audioin_ios.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
   else()
     target_sources(dect2core PRIVATE core/src/audio/audioout_coreaudio.mm core/src/audio/audioin_coreaudio.mm)
   endif()
