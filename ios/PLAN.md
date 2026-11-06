@@ -94,7 +94,7 @@ library in the iOS SDK, and it would still need `DynLib` changes.
 - `IioApi::ok` requires the scan functions, and the loader needs a path that does not use `dlopen`.
 - `192.168.2.1` is the USB-gadget link, unproven on iPhone. Assume Wi-Fi or Ethernet.
 
-Checked against the real radio at `192.168.10.9`, an ANTSDR Rev.C (Zynq 7020, AD9361, firmware v0.39-1-g7bcc-dirty, iiod 0.26):
+Checked against the real radio at `192.168.10.9`, an ANTSDR E310 (reports as ANTSDR Rev.C; Zynq 7020, AD9361, firmware v0.39-1-g7bcc-dirty, iiod 0.26):
 
 - `VERSION`, `PRINT`, `READ`, `TIMEOUT`, `SET ... BUFFERS_COUNT`, `OPEN`, `READBUF` and `CLOSE` all work as described, using ids such as
   `iio:device1` (`ad9361-phy`) and `iio:device4` (`cf-ad9361-lpc`). `WRITE` has not been tried.
