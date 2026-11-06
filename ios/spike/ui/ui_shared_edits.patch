@@ -1,0 +1,459 @@
+diff --git a/app/gfx/gfx_metal.mm b/app/gfx/gfx_metal.mm
+index b48722b8..623786a1 100644
+--- a/app/gfx/gfx_metal.mm
++++ b/app/gfx/gfx_metal.mm
+@@ -1,12 +1,14 @@
+-// Metal back end (macOS).
++// Metal back end (macOS, and iOS: there the host hands over the layer of its MTKView, setHostLayer()).
+ #include "gfx.h"
+-#include "imgui_impl_glfw.h"
+ #include "imgui_impl_metal.h"
++#include <TargetConditionals.h>
+ #define GLFW_INCLUDE_NONE
+-#define GLFW_EXPOSE_NATIVE_COCOA
+ #include <GLFW/glfw3.h>
++#if !TARGET_OS_IPHONE
++#define GLFW_EXPOSE_NATIVE_COCOA
+ #include <GLFW/glfw3native.h>
+ #import <Cocoa/Cocoa.h>
++#endif
+ #import <Metal/Metal.h>
+ #import <QuartzCore/QuartzCore.h>
+ #include <vector>
+@@ -42,6 +44,10 @@ kernel void nv12(texture2d<float, access::read> Y [[texture(0)]], texture2d<floa
+ id<MTLDevice> gDevice;
+ id<MTLCommandQueue> gQueue;
+ id<MTLComputePipelineState> gPso;
++#if TARGET_OS_IPHONE
++CAMetalLayer* gHostLayer = nil;
++bool gBackground = false;   // iOS refuses GPU work from the background: pictures are not converted meanwhile
++#endif
+ 
+ struct MtlImage : Image {
+     id<MTLTexture> tex = nil;
+@@ -75,6 +81,9 @@ void uploadRGBA(const uint8_t* rgba) override {
+         [tex replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0 withBytes:rgba bytesPerRow:w * 4];
+     }
+     bool uploadNV12(const uint8_t* y, const uint8_t* uv, bool bt709, bool fullRange, bool deint) override {
++#if TARGET_OS_IPHONE
++      if (gBackground) return true;
++#endif
+       @autoreleasepool {
+         if (!gPso) {
+             NSError* err = nil;
+@@ -98,6 +107,7 @@ bool uploadNV12(const uint8_t* y, const uint8_t* uv, bool bt709, bool fullRange,
+     }
+ };
+ 
++#if !TARGET_OS_IPHONE
+ struct MtlSurface : Surface {
+     GLFWwindow* win;
+     CAMetalLayer* layer;
+@@ -136,6 +146,7 @@ void present(ImDrawData* dd, int fbW, int fbH) override {
+       }
+     }
+ };
++#endif
+ 
+ struct MtlBackend : Backend {
+     GLFWwindow* win;
+@@ -149,6 +160,12 @@ explicit MtlBackend(GLFWwindow* w) : win(w) {
+         gDevice = MTLCreateSystemDefaultDevice();
+         gQueue = [gDevice newCommandQueue];
+         ImGui_ImplMetal_Init(gDevice);
++#if TARGET_OS_IPHONE
++        layer = gHostLayer;
++        layer.device = gDevice;
++        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
++        layer.framebufferOnly = YES;
++#else
+         NSWindow* nswin = glfwGetCocoaWindow(w);
+         layer = [CAMetalLayer layer];
+         layer.device = gDevice;
+@@ -157,6 +174,7 @@ explicit MtlBackend(GLFWwindow* w) : win(w) {
+         layer.framebufferOnly = [[NSProcessInfo processInfo].arguments containsObject:@"--shot"] ? NO : YES;
+         nswin.contentView.layer = layer;
+         nswin.contentView.wantsLayer = YES;
++#endif
+         rpd = [MTLRenderPassDescriptor new];
+     }
+     Image* createImage(int w, int h, uint32_t fill) override { return new MtlImage(w, h, fill); }
+@@ -199,7 +217,11 @@ void endFrame(ImDrawData* dd, const char* shotPath) override {
+         drawable = nil; cb = nil; enc = nil;
+       }
+     }
++#if TARGET_OS_IPHONE
++    Surface* createSurface(GLFWwindow*) override { return nullptr; }   // popout.cpp:121 then gives the window up: no second window on iOS
++#else
+     Surface* createSurface(GLFWwindow* w) override { return new MtlSurface(w); }
++#endif
+     void shutdown() override { ImGui_ImplMetal_Shutdown(); }
+ };
+ 
+@@ -211,5 +233,9 @@ void setLevel(int) {}
+ const char* levelName() { return "Metal"; }
+ void windowHints() { glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); }
+ Backend* create(GLFWwindow* window) { return new MtlBackend(window); }
++#if TARGET_OS_IPHONE
++void setHostLayer(CAMetalLayer* l) { gHostLayer = l; }
++void setBackground(bool on) { gBackground = on; }
++#endif
+ 
+ }
+diff --git a/app/main.cpp b/app/main.cpp
+index 31eece2f..6c9af454 100644
+--- a/app/main.cpp
++++ b/app/main.cpp
+@@ -4,6 +4,11 @@
+ #ifdef __linux__
+ #include <unistd.h>
+ #endif
++#ifdef __APPLE__
++#include <TargetConditionals.h>
++#else
++#define TARGET_OS_IPHONE 0
++#endif
+ #include "dect2/common/time_source.h"
+ #include "dect2/session/mode_adapters.h"
+ #include "dect2/session/session_store.h"
+@@ -292,7 +297,21 @@ extern bool gOnAirIdCheck;      // third_party/imgui/imgui.cpp (test hook)
+ extern int gOnAirIdConflicts;
+ static bool gIdCheckFailed = false;
+ 
+-int main(int argc, char** argv) {
++// what main() and the iOS host share: start, one frame, stop (the host calls them from its MTKView delegate)
++namespace {
++struct Run {
++    GLFWwindow* window = nullptr;
++    gfx::Backend* gfxBackend = nullptr;
++    App* app = nullptr;
++    DevOpts o;
++    double last = 0, frameNext = 0, lastInputT = 0, interval = 0;
++    ImGuiStyle baseStyle;
++};
++Run gRun;
++}
++
++bool appRunInit(int argc, char** argv) {
++    Run& R = gRun;
+     dect2::crash::install();   // first: a crash from here on leaves a report
+ #ifdef __linux__
+     if (geteuid() == 0) fprintf(stderr, "OnAir: running as root is not needed; see docs for udev rules\n");
+@@ -313,10 +332,10 @@ int main(int argc, char** argv) {
+     }
+     if (!dect2::cpuSupportsBuild()) {
+         plat::showFatalError("OnAir", "This version of OnAir needs a processor with AVX2 and FMA instructions (any Intel or AMD processor from about 2013 on).");
+-        return 1;
++        return false;
+     }
+-    GLFWwindow* window = createMainWindow(argc, argv);
+-    if (!window) return 1;   // createMainWindow has already said why
++    GLFWwindow* window = R.window = createMainWindow(argc, argv);
++    if (!window) return false;   // createMainWindow has already said why
+ 
+     IMGUI_CHECKVERSION();
+     ImGui::CreateContext();
+@@ -324,12 +343,12 @@ int main(int argc, char** argv) {
+     void layoutCheckInstall();   // layout_check.cpp (developer build)
+     layoutCheckInstall();
+ #endif
+-    gfx::Backend* gfxBackend = gfx::create(window);
++    gfx::Backend* gfxBackend = R.gfxBackend = gfx::create(window);
+     if (!gfxBackend) {
+         fprintf(stderr, "could not start the graphics back end (%s)\n", gfx::levelName());
+         plat::showFatalError("OnAir", "OnAir could not start its graphics (the OpenGL functions it needs are missing or the shaders failed).\n\n"
+             "On a Raspberry Pi or another board with a Mesa driver, try:\nMESA_GL_VERSION_OVERRIDE=3.3 MESA_GLSL_VERSION_OVERRIDE=330 onair");
+-        return 1;
++        return false;
+     }
+     gGfx = gfxBackend;
+ 
+@@ -360,9 +379,10 @@ int main(int argc, char** argv) {
+     }
+     applyTheme();
+     typo::applyStyle(ImGui::GetStyle());
+-    static ImGuiStyle baseStyle = ImGui::GetStyle();   // the style at scale 1
++    R.baseStyle = ImGui::GetStyle();   // the style at scale 1
+ 
+-    App app;
++    R.app = new App;
++    App& app = *R.app;
+     loadFonts(app, io);
+     // A layout slip (an item missing after SetCursorPos, for example) is recovered by ImGui; the red 'MESSAGE FROM DEAR IMGUI' box and the assert
+     // are for developers, so users do not get a popup over the window. The recovery message still goes to the debug log.
+@@ -381,14 +401,25 @@ int main(int argc, char** argv) {
+ 
+     app.wf.init(gfxBackend);
+     startApp(app, argc, argv);
+-    DevOpts o;
++    DevOpts& o = R.o;
+     parseDevFlags(app, argc, argv, o);
+     if (!o.shotPath && argc <= 1 && touch::autoTouch(gWorkAreaW, gWorkAreaH, plat::prefs().has("touchUi") || plat::prefs().has("touchAutoSeen"))) {   // #139: a small screen starts in the touch interface (View > Touch interface turns it off)
+         app.touchUi = true; plat::prefs().setB("touchAutoSeen", true); savePrefs(app);
+     }
+-    double last = glfwGetTime();
+-    double frameNext = 0, lastInputT = 0;
+-    while (!glfwWindowShouldClose(window)) {
++    R.last = glfwGetTime();
++    return true;
++}
++
++// one pass of the frame loop
++void appRunFrame() {
++    Run& R = gRun;
++    App& app = *R.app;
++    GLFWwindow* window = R.window;
++    gfx::Backend* gfxBackend = R.gfxBackend;
++    DevOpts& o = R.o;
++    ImGuiIO& io = ImGui::GetIO();
++    double& frameNext = R.frameNext; double& lastInputT = R.lastInputT; double& last = R.last;
++    const ImGuiStyle& baseStyle = R.baseStyle;
+         appResultsSave(app);   // every 30 s: the lists the screens keep themselves (the engine saves its own on a thread)
+         layoutTick(app, !app.touchUi && !o.shotPath);   // per-mode window positions (desktop; not in --shot runs)
+         workspaceSessionTick(app);   // every few seconds: the last-session file (crash restore)
+@@ -396,12 +427,13 @@ int main(int argc, char** argv) {
+         savePrefsTick();   // a deferred tuning save (savePrefsSoon), once the tuning has been still
+         {
+             const PaceInfo pi = paceFrame(window, app, o, frameNext, lastInputT);
++            R.interval = pi.interval;
+             glfwPollEvents();
+             wbDropTick(app);
+             updateTick(app);
+             rcaps::frameGate(anyRunning());   // Linux / software OpenGL: input never draws faster than 60 fps; low-power drawing caps lower
+             int w, h;
+-            if (minimisedFrame(window, app, o, w, h)) continue;
++            if (minimisedFrame(window, app, o, w, h)) return;
+             static const float kClear[4] = {0.04f, 0.045f, 0.05f, 1.f}, kClearLight[4] = {0.955f, 0.95f, 0.96f, 1.f};
+             static const float kClearHc[4] = {0.f, 0.f, 0.f, 1.f};
+             gfxBackend->newFrame(w, h, app.highContrast ? kClearHc : (app.lightUi || (app.newUi && app.uiTheme == 7)) ? kClearLight : kClear);
+@@ -438,7 +470,27 @@ int main(int argc, char** argv) {
+                 glfwSetWindowShouldClose(window, 1);
+             }
+         }
+-    }
+-    shutdownApp(app, gfxBackend, window);
++}
++
++int appRunShutdown() {
++    shutdownApp(*gRun.app, gRun.gfxBackend, gRun.window);
+     return gIdCheckFailed ? 3 : 0;
+ }
++
++App& appRunApp() { return *gRun.app; }
++double appRunInterval() { return gRun.interval; }
++// what must reach the disk before the system may end the app without notice (iOS): the first part of shutdownApp()
++void appRunFlush() {
++    savePrefsFlush();
++    plat::prefs().flush();
++    layoutSaveNow();
++    appResultsSave(*gRun.app, true);
++}
++
++#if !TARGET_OS_IPHONE
++int main(int argc, char** argv) {
++    if (!appRunInit(argc, argv)) return 1;
++    while (!glfwWindowShouldClose(gRun.window)) appRunFrame();
++    return appRunShutdown();
++}
++#endif
+diff --git a/app/main_internal.h b/app/main_internal.h
+index ce052ed7..88048fd0 100644
+--- a/app/main_internal.h
++++ b/app/main_internal.h
+@@ -27,5 +27,11 @@ GLFWwindow* createMainWindow(int argc, char** argv);            // main_window.c
+ void loadFonts(App& app, ImGuiIO& io);                           // main_window.cpp
+ void startApp(App& app, int argc, char** argv);                               // main_start.cpp: startup guard, first-run dialogs, radios, last results
+ void parseDevFlags(App& app, int argc, char** argv, DevOpts& o); // main_start.cpp
++bool appRunInit(int argc, char** argv);                          // main.cpp: main() in three parts, the iOS host calls them
++void appRunFrame();
++int appRunShutdown();
++void appRunFlush();                                              // settings and results to disk
++App& appRunApp();
++double appRunInterval();                                         // the interval the frame pacing chose last
+ bool anyRunning();                                               // ui/main_tabs.cpp
+ void lightenDrawData(ImDrawData* dd, bool light = true, bool highContrast = false);   // ui/light_theme.cpp
+diff --git a/app/platform/platform_cocoa.mm b/app/platform/platform_cocoa.mm
+index fdc04755..21c0b9c4 100644
+--- a/app/platform/platform_cocoa.mm
++++ b/app/platform/platform_cocoa.mm
+@@ -4,7 +4,13 @@
+ #include <cstdio>
+ #include <cstdlib>
+ #include <filesystem>
++#include <TargetConditionals.h>
++#if TARGET_OS_IPHONE
++#import <Foundation/Foundation.h>
++#import <CoreGraphics/CoreGraphics.h>
++#else
+ #import <Cocoa/Cocoa.h>
++#endif
+ #import <CoreLocation/CoreLocation.h>
+ #import <ImageIO/ImageIO.h>
+ 
+@@ -105,11 +111,32 @@ bool decodeImage(const std::string& path, int& w, int& h, std::vector<uint32_t>&
+     }
+ }
+ 
++#if TARGET_OS_IPHONE
++bool fetchUrl(const std::string& url, const std::string& file, const std::string& userAgent) {   // no curl program here, and httpRequest() stops at 64 KB
++    @autoreleasepool {
++        NSURL* u = [NSURL URLWithString:[NSString stringWithUTF8String:url.c_str()]];
++        if (!u) return false;
++        NSMutableURLRequest* q = [NSMutableURLRequest requestWithURL:u cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:12];
++        [q setValue:[NSString stringWithUTF8String:userAgent.c_str()] forHTTPHeaderField:@"User-Agent"];
++        __block bool ok = false;
++        NSString* path = [NSString stringWithUTF8String:file.c_str()];
++        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
++        [[[NSURLSession sharedSession] dataTaskWithRequest:q completionHandler:^(NSData* d, NSURLResponse* r, NSError* e) {
++            NSHTTPURLResponse* h = [r isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)r : nil;
++            ok = !e && d && h && h.statusCode >= 200 && h.statusCode < 300 && [d writeToFile:path atomically:YES];
++            dispatch_semaphore_signal(sem);
++        }] resume];
++        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)15 * NSEC_PER_SEC));
++        return ok;
++    }
++}
++#else
+ bool fetchUrl(const std::string& url, const std::string& file, const std::string& userAgent) {
+     auto q = [](const std::string& s) { std::string o = "'"; for (char c : s) { if (c == '\'') o += "'\\''"; else o += c; } return o + "'"; };
+     const std::string cmd = "curl -fsSL --max-time 12 -A " + q(userAgent) + " -o " + q(file) + " " + q(url) + " 2>/dev/null";
+     return system(cmd.c_str()) == 0;
+ }
++#endif
+ 
+ static bool postImpl(const std::string& url, const std::string& json, const std::string& userAgent, std::string* reply) {
+     @autoreleasepool {
+@@ -202,6 +229,11 @@ HttpResult httpRequest(const std::string& method, const std::string& url, const
+ bool postJson(const std::string& url, const std::string& json, const std::string& userAgent) { return postImpl(url, json, userAgent, nullptr); }
+ bool postJsonReply(const std::string& url, const std::string& json, const std::string& userAgent, std::string& reply) { reply.clear(); return postImpl(url, json, userAgent, &reply); }
+ 
++#if TARGET_OS_IPHONE
++std::string openFileDialog() { return std::string(); }   // platform.h: empty = no dialog (type the path); the Files picker is asynchronous
++std::string openFolderDialog() { return std::string(); }
++std::string saveFileDialog(const char*) { return std::string(); }
++#else
+ std::string openFileDialog() {
+     NSOpenPanel* p = [NSOpenPanel openPanel];
+     p.canChooseFiles = YES; p.canChooseDirectories = NO; p.allowsMultipleSelection = NO;
+@@ -222,6 +254,7 @@ HttpResult httpRequest(const std::string& method, const std::string& url, const
+     if ([p runModal] == NSModalResponseOK) return std::string(p.URL.path.UTF8String);
+     return {};
+ }
++#endif
+ 
+ namespace {
+ // Never nil: stringWithUTF8String gives nil for bytes that are not UTF-8 (a service name damaged by bit errors), and nil in the dictionary
+@@ -294,6 +327,7 @@ void setChannels(const std::vector<Channel>& ch) override {
+ // (the processor check in main.cpp), so it makes the application object itself.
+ void showFatalError(const char* title, const char* text) {
+     fprintf(stderr, "%s: %s\n", title, text);
++#if !TARGET_OS_IPHONE
+     @autoreleasepool {
+         [NSApplication sharedApplication];
+         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+@@ -304,16 +338,22 @@ void showFatalError(const char* title, const char* text) {
+         a.informativeText = [NSString stringWithUTF8String:text];
+         [a runModal];
+     }
++#endif
+ }
+ 
+ Prefs& basePrefs() { static DefaultsPrefs p; return p; }
+ 
+ std::vector<std::string> uiFontCandidates() { return {"/System/Library/Fonts/Helvetica.ttc"}; }
++#if TARGET_OS_IPHONE
++std::vector<std::string> cjkFontCandidates() { return {"/System/Library/Fonts/Core/AppleSDGothicNeo.ttc"}; }
++std::vector<std::string> monoFontCandidates() { return {"/System/Library/Fonts/CoreUI/Menlo.ttc"}; }
++#else
+ std::vector<std::string> cjkFontCandidates() { return {"/System/Library/Fonts/AppleSDGothicNeo.ttc", "/Library/Fonts/AppleGothic.ttf",
+                                                           "/System/Library/Fonts/Supplemental/AppleGothic.ttf", "/System/Library/Fonts/PingFang.ttc",
+                                                           "/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
+                                                           "/System/Library/Fonts/\xE3\x83\x92\xE3\x83\xA9\xE3\x82\xAE\xE3\x83\x8E\xE8\xA7\x92\xE3\x82\xB4\xE3\x82\xB7\xE3\x83\x83\xE3\x82\xAF W3.ttc"}; }
+ std::vector<std::string> monoFontCandidates() { return {"/System/Library/Fonts/Menlo.ttc"}; }
++#endif
+ std::string uiLanguage() {
+     NSArray<NSString*>* l = [NSLocale preferredLanguages];   // the order of System Settings > Language & Region
+     return l.count ? std::string([l[0] UTF8String]) : std::string("en");
+diff --git a/app/ui/touch.cpp b/app/ui/touch.cpp
+index b32a98e5..71c049a5 100644
+--- a/app/ui/touch.cpp
++++ b/app/ui/touch.cpp
+@@ -127,6 +127,13 @@ void endFrame() {
+ 
+ void noteTab(const char* name, bool open) { gTabsNow.emplace_back(name, open); }
+ 
++int tabCount() { return (int)gTabsLast.size(); }
++const char* tabName(int i, bool* open) {
++    if (i < 0 || i >= (int)gTabsLast.size()) return "";
++    if (open) *open = gTabsLast[(size_t)i].second;
++    return gTabsLast[(size_t)i].first.c_str();
++}
++
+ void swipeTabs(int dir) {
+     int cur = -1;
+     for (size_t i = 0; i < gTabsLast.size(); i++) if (gTabsLast[i].second) cur = (int)i;
+diff --git a/app/ui/touch.h b/app/ui/touch.h
+index ea882cdf..f0920d05 100644
+--- a/app/ui/touch.h
++++ b/app/ui/touch.h
+@@ -62,5 +62,10 @@ void closeSheet();
+ 
+ // ---- the shell (touch_shell.cpp)
+ void shell(App& a, ImVec2 disp);
++// A host with its own navigation (iOS): body is drawn in place of the shell's body and the shell's top bar and dock go; the sheets and the
++// gestures stay. Null: the shell as it is.
++void setShellHost(void (*body)(App&, ImVec2));
++int tabCount();                                        // the tabs noteTab() saw last frame
++const char* tabName(int i, bool* open);
+ 
+ }   // namespace touch
+diff --git a/app/ui/touch_shell.cpp b/app/ui/touch_shell.cpp
+index d09de639..27672ce7 100644
+--- a/app/ui/touch_shell.cpp
++++ b/app/ui/touch_shell.cpp
+@@ -13,6 +13,7 @@ namespace {
+ bool gOpenGain = false, gOpenVol = false, gOpenTuner = false, gOpenMore = false;
+ bool gDevDone = false;
+ int gMorePage = 0;   // 0 menu of pages, 1 status, 2 results list, 3 analysis
++void (*gHostBody)(App&, ImVec2) = nullptr;   // setShellHost()
+ 
+ struct Item { const char* label; float weight; };
+ 
+@@ -148,6 +149,8 @@ void moreSheet(App& a) {
+ 
+ }   // namespace
+ 
++void setShellHost(void (*body)(App&, ImVec2)) { gHostBody = body; }
++
+ void shell(App& a, ImVec2 disp) {
+     frame();
+     if (!gDevDone && !gDevOpen.empty() && ImGui::GetFrameCount() > 60) {   // --touchsheet gain | vol | tuner | more | more1 | more2 | more3
+@@ -158,14 +161,15 @@ void shell(App& a, ImVec2 disp) {
+     ImGui::SetNextWindowPos(ImVec2(0, 0));
+     ImGui::SetNextWindowSize(disp);
+     ImGui::Begin("##troot", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+-    topBar(a, disp);
++    if (!gHostBody) topBar(a, disp);
+     const bool wide = disp.x >= 1000.f * dpi();
+     const float rowH = target() * 1.15f, sp = ImGui::GetStyle().ItemSpacing.y;
+-    const float dockH = (wide ? 1 : 2) * rowH + (wide ? 0 : sp) + ImGui::GetStyle().WindowPadding.y * 2;
+-    const float bodyH = ImGui::GetContentRegionAvail().y - dockH - sp;
++    const float dockH = gHostBody ? 0.f : (wide ? 1 : 2) * rowH + (wide ? 0 : sp) + ImGui::GetStyle().WindowPadding.y * 2;
++    const float bodyH = ImGui::GetContentRegionAvail().y - (gHostBody ? 0.f : dockH + sp);
+     ImGui::BeginChild("##tbody", ImVec2(0, bodyH), 0);
+     const ImVec2 bodyMin = ImGui::GetWindowPos(), bodyMax = ImVec2(bodyMin.x + ImGui::GetWindowSize().x, bodyMin.y + ImGui::GetWindowSize().y);
+-    if (hamViewFlag()) hamPanel(a);
++    if (gHostBody) gHostBody(a, disp);
++    else if (hamViewFlag()) hamPanel(a);
+     else if (txViewFlag()) txPanel(a);
+     else {
+         if (disp.y >= disp.x) { statusBar(a); ImGui::Separator(); }   // portrait: the mode's status line on top; landscape keeps the height for the picture (More > Status)
+@@ -175,7 +179,7 @@ void shell(App& a, ImVec2 disp) {
+     const GestureFrame& g = gesture();
+     if (g.swipe && !pressedOnItem() && g.cx >= bodyMin.x && g.cx <= bodyMax.x && g.cy >= bodyMin.y && g.cy <= bodyMax.y && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))
+         swipeTabs(-g.swipe);   // swipe left = the next tab
+-    dock(a, disp, dockH);
++    if (!gHostBody) dock(a, disp, dockH);
+     keypadSheet(a);
+     stepSheet(a);
+     gainSheet(a);
