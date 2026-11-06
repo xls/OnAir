@@ -120,11 +120,11 @@ struct StatusStrip: View {
                 .frame(width: 62)
 
                 Button {
-                    typed = String(format: "%.5f", receiver.status.mhz)
+                    typed = String(format: "%.3f", receiver.status.mhz)
                     typing = true
                 } label: {
                     GlassWindow(corner: 6) {
-                        Text(String(format: "%.5f MHz", receiver.status.mhz))
+                        Text(String(format: "%.3f MHz", receiver.status.mhz))
                             .font(.system(size: 19, weight: .medium, design: .monospaced))
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)

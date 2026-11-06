@@ -342,7 +342,7 @@ struct SpectrumPage: View {
     private func scrubStep(spanMhz: Double, width: CGFloat) -> Double {
         // one point of finger travel is one point of the view, so the step follows the zoom
         let perPoint = spanMhz / max(width, 1)
-        return [0.00001, 0.0001, 0.001, 0.005, 0.0125, 0.025, 0.1, 0.5].first { $0 >= perPoint } ?? 1
+        return [0.001, 0.005, 0.0125, 0.025, 0.1, 0.5].first { $0 >= perPoint } ?? 1
     }
 
     /// While zoomed in, the view moves along with the marker when it nears an edge.

@@ -66,16 +66,10 @@ struct FMRadioPage: View {
         GlassWindow(corner: 8) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline) {
-                    let digits = String(format: "%.5f", receiver.status.mhz)
-                    HStack(alignment: .firstTextBaseline, spacing: 1) {
-                        Text(digits.dropLast(2))
-                            .font(.system(size: 39, weight: .light, design: .monospaced))
-                        Text(digits.suffix(2))
-                            .font(.system(size: 19, weight: .light, design: .monospaced))
-                            .opacity(0.8)
-                    }
-                    .lineLimit(1)
-                    .fixedSize()
+                    Text(String(format: "%.3f", receiver.status.mhz))
+                        .font(.system(size: 42, weight: .light, design: .monospaced))
+                        .lineLimit(1)
+                        .fixedSize()
                     Spacer(minLength: 6)
                     Text(locked && !fm.station.isEmpty ? fm.station : "· · · · ·")
                         .font(.system(size: 17, weight: .semibold, design: .monospaced))
@@ -144,7 +138,7 @@ private struct MemoryButton: View {
 
     /// As many decimals as the frequency has, and at least one.
     private static func short(_ mhz: Double) -> String {
-        var text = String(format: "%.5f", mhz)
+        var text = String(format: "%.3f", mhz)
         while text.hasSuffix("0"), !text.hasSuffix(".0") { text.removeLast() }
         return text
     }
