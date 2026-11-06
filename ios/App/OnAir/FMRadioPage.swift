@@ -66,13 +66,21 @@ struct FMRadioPage: View {
         GlassWindow(corner: 8) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(String(format: "%.1f", receiver.status.mhz))
-                        .font(.system(size: 50, weight: .light, design: .monospaced))
-                    Text("MHz").font(.system(size: 12, weight: .medium, design: .monospaced))
-                    Spacer()
+                    let digits = String(format: "%.5f", receiver.status.mhz)
+                    HStack(alignment: .firstTextBaseline, spacing: 1) {
+                        Text(digits.dropLast(2))
+                            .font(.system(size: 39, weight: .light, design: .monospaced))
+                        Text(digits.suffix(2))
+                            .font(.system(size: 19, weight: .light, design: .monospaced))
+                            .opacity(0.8)
+                    }
+                    .lineLimit(1)
+                    .fixedSize()
+                    Spacer(minLength: 6)
                     Text(locked && !fm.station.isEmpty ? fm.station : "· · · · ·")
-                        .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
                 .foregroundStyle(RadioTheme.amber)
                 .shadow(color: RadioTheme.amber.opacity(0.8), radius: 8)
@@ -134,13 +142,22 @@ private struct MemoryButton: View {
     let recall: () -> Void
     let save: () -> Void
 
+    /// As many decimals as the frequency has, and at least one.
+    private static func short(_ mhz: Double) -> String {
+        var text = String(format: "%.5f", mhz)
+        while text.hasSuffix("0"), !text.hasSuffix(".0") { text.removeLast() }
+        return text
+    }
+
     var body: some View {
         HardwareKey(lit: mhz > 0, action: recall) {
             VStack(spacing: 0) {
                 EngravedLabel(text: String(number), size: 8)
-                Text(mhz > 0 ? String(format: "%.1f", mhz) : "")
+                Text(mhz > 0 ? Self.short(mhz) : "")
                     .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(Color(white: 0.09))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
         }
         .onLongPressGesture {
