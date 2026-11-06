@@ -9,7 +9,7 @@ set(DECT2_BUILD_APP ON CACHE BOOL "" FORCE)   # app/ becomes the static library 
 set(DECT2_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(DECT2_WITH_SOAPY OFF CACHE BOOL "" FORCE)
 set(DECT2_HAVE_HAMLIB OFF CACHE BOOL "" FORCE)
-set(DECT2_BUNDLE_CODEC2 OFF CACHE BOOL "" FORCE)
+set(DECT2_BUNDLE_CODEC2 ON CACHE BOOL "" FORCE)    # libcodec2 goes into the app as a signed library
 
 add_subdirectory("${_onair_repo}" "${CMAKE_BINARY_DIR}/onair-core" EXCLUDE_FROM_ALL)
 

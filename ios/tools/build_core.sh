@@ -11,6 +11,7 @@ ARGS=""
 for sdk in $SDKS; do
   B="$OUT/$sdk"
   "$ROOT/ios/tools/build_ffmpeg.sh" "$sdk"
+  "$ROOT/ios/tools/build_codecs.sh" "$sdk"
   # libiio, unchanged from upstream: network backend only, using the SDK's libxml2. The core finds it by name (DynLib, native_common.h).
   [ -d "$OUT/deps/libiio" ] || git clone -q --depth 1 --branch "$LIBIIO_TAG" https://github.com/analogdevicesinc/libiio.git "$OUT/deps/libiio"
   SDKPATH=$(xcrun --sdk "$sdk" --show-sdk-path)
@@ -35,6 +36,8 @@ for sdk in $SDKS; do
     -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$sdk" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
     -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DCMAKE_BUILD_TYPE=Release -DONAIR_IIO_SYMBOLS="$B/iio_symbols.c" -DDECT2_FFMPEG_PREFIX="$B/ffmpeg"
   cmake --build "$B" --target onair_ios
+  # codec2 stays a library of its own, signed into the app with the plug-ins
+  cp -L "$B/libcodec2.1.2.dylib" "$B/codecs/"
   # one archive for Xcode: every static library of the build, Rust included
   mkdir -p "$B/merged"
   find "$B" -name '*.a' -not -path '*/merged/*' -not -path '*/deps/*' -not -path '*/ffmpeg-build/*' | sort > "$B/merged/libs.txt"

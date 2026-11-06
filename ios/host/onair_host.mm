@@ -8,6 +8,8 @@
 #include "gfx/colormap.h"
 #include "results_json.h"
 #include "dect2/channels/freq_db.h"
+#include "dect2/codec/codec_registry.h"
+#include "dect2/codec/speech_codec.h"
 #include "dect2/channels/tvplan.h"
 #include "platform/platform.h"
 #include "dect2/tv/teletext.h"
@@ -122,6 +124,22 @@ void pageBody(App& a, ImVec2) {
 extern "C" {
 
 bool onair_start(void* layer, const char*) {
+    // the codecs signed into the app: where the core looks for them, and the plug-ins it asks for by name
+    const std::string codecs = NSBundle.mainBundle.privateFrameworksPath.UTF8String;
+    setenv("ONAIR_CODEC_DIR", codecs.c_str(), 1);
+    if (NSString* c2 = [[[NSFileManager.defaultManager contentsOfDirectoryAtPath:NSBundle.mainBundle.privateFrameworksPath error:nil]
+                         filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF BEGINSWITH 'libcodec2'"]] firstObject])
+        setenv("DECT2_CODEC2_PATH", (codecs + "/" + c2.UTF8String).c_str(), 1);
+    for (const char* id : {"ambe2", "ambe", "imbe", "ysf", "tetra"}) {
+        const std::string codec = id;
+        std::unique_ptr<dect2::codec::SpeechCodec> probe;
+        if (dect2::codec::loadSpeechCodec(codec, codecs, true, probe).status != dect2::codec::CodecStatus::Ready) continue;
+        dect2::codec::setPluginFactory(codec, [codec, codecs] {
+            std::unique_ptr<dect2::codec::SpeechCodec> c;
+            dect2::codec::loadSpeechCodec(codec, codecs, true, c);
+            return c;
+        }, codecs + "/" + dect2::codec::speechCodecFileName(codec));
+    }
     gfx::setHostLayer((__bridge CAMetalLayer*)layer);
     static char name[] = "OnAir";
     static char* argv[] = {name, nullptr};
