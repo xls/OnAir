@@ -128,6 +128,9 @@ void onair_resize(int w, int h, float scale) { onair_shim_geometry(w, h, (int)(w
 
 void onair_set_page(OnAirPage page) {
     gPage = page;
+    const bool hidden = page == ONAIR_PAGE_NONE;   // the receiver logic still runs each frame, with no GPU work: nothing would ever be shown
+    ::power::setHostOccluded(hidden);
+    gfx::setBackground(hidden);
     settingsOpen() = page == ONAIR_PAGE_SETTINGS;   // a titled window: touch.cpp:60 makes it fill a narrow display
     touch::setShellHost(page == ONAIR_PAGE_TOUCH_SHELL ? nullptr : pageBody);
 }

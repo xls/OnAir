@@ -1,3 +1,4 @@
+import Accelerate
 import OnAirCore
 import SwiftUI
 
@@ -20,8 +21,9 @@ struct FMRadioPage: View {
 
     let receiver: Receiver
     @State private var fm = FM()
+    @State private var audioLevel = 0.0
     @AppStorage("fmMemories") private var memoriesText = ""
-    private let tick = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
+    private let tick = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
 
     private var locked: Bool { receiver.status.running && fm.state == 2 }
     private var memories: [Double] {
@@ -33,11 +35,12 @@ struct FMRadioPage: View {
         FacePlate {
             VStack(spacing: 12) {
                 display
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     NeedleMeter(title: "SIGNAL", value: receiver.status.running ? min(max(fm.snrDb / 60, 0), 1) : 0, scale: ["0", "20", "40", "60"])
-                    lamps
+                    NeedleMeter(title: "VU", value: receiver.status.running ? audioLevel : 0, scale: ["-30", "-20", "-10", "0"])
                 }
-                .frame(height: 96)
+                .frame(height: 92)
+                lamps
                 BandScale(mhz: receiver.status.mhz, lowMhz: 87.5, highMhz: 108, stepMhz: Self.step, tune: receiver.tune(mhz:))
                     .frame(height: 56)
                 HStack(spacing: 14) {
@@ -96,16 +99,19 @@ struct FMRadioPage: View {
     }
 
     private var lamps: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            RadioLamp(label: "LOCK", lit: locked, colour: .green)
-            RadioLamp(label: "STEREO", lit: locked && fm.stereo, colour: .red)
-            RadioLamp(label: "RDS", lit: locked && fm.rds)
-            RadioLamp(label: "TRAFFIC", lit: locked && fm.traffic)
+        GlassWindow(corner: 6) {
+            HStack {
+                RadioLamp(label: "LOCK", lit: locked, colour: .green)
+                Spacer()
+                RadioLamp(label: "STEREO", lit: locked && fm.stereo, colour: .red)
+                Spacer()
+                RadioLamp(label: "RDS", lit: locked && fm.rds)
+                Spacer()
+                RadioLamp(label: "TRAFFIC", lit: locked && fm.traffic)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 26)
         }
-        .padding(.horizontal, 10)
-        .frame(width: 104, height: 96, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(RadioTheme.glass))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LinearGradient(colors: [.black, .white.opacity(0.35)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5))
     }
 
     private func memoryColumn(_ range: Range<Int>) -> some View {
@@ -123,7 +129,16 @@ struct FMRadioPage: View {
         .frame(width: 66)
     }
 
+    /// The sound's level over the last moment: 0 at -30 dB, 1 at full scale.
+    private func measureAudio() {
+        var stereo = [Float](repeating: 0, count: 4096)
+        onair_audio_recent(&stereo, 2048)
+        let db = 20 * log10(max(vDSP.rootMeanSquare(stereo), 1e-6))
+        audioLevel = min(max(Double(db + 30) / 30, 0), 1)
+    }
+
     private func load() {
+        measureAudio()
         guard let text = onair_fm_json() else { return }
         if let new = try? JSONDecoder().decode(FM.self, from: Data(String(cString: text).utf8)) { fm = new }
     }

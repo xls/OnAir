@@ -50,12 +50,16 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
     private let waterfallPipeline, tracePipeline: MTLRenderPipelineState
     private let texture: MTLTexture
-    private var bins = [Float](repeating: -120, count: SpectrumRenderer.binCount)
-    private var meta = [Double](repeating: 0, count: 6)
-    private var rowPixels = [UInt32](repeating: 0, count: SpectrumRenderer.binCount)
-    private var colours = [UInt32](repeating: 0, count: 256)
-    private var row = 0
-    private var noiseFloor: Float = -1000
+    // hot data, touched for every pixel: kept out of SwiftUI's change tracking
+    @ObservationIgnored private var bins = [Float](repeating: -120, count: SpectrumRenderer.binCount)
+    @ObservationIgnored private var meta = [Double](repeating: 0, count: 6)
+    @ObservationIgnored private var rowPixels = [UInt32](repeating: 0, count: SpectrumRenderer.binCount)
+    @ObservationIgnored private var colours = [UInt32](repeating: 0, count: 256)
+    @ObservationIgnored private var row = 0
+    @ObservationIgnored private var noiseFloor: Float = -1000
+    @ObservationIgnored private var frames = 0
+    @ObservationIgnored private var lines = 0
+    @ObservationIgnored private var frameClock = Date()
 
     /// The visible part of the capture, 0...1.
     var visibleCentre = 0.5
@@ -95,10 +99,12 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
         var got = false
         while onair_spectrum(&bins, Int32(Self.binCount), &meta) { got = true }
         guard got else { return }
-        centreHz = meta[0]
-        spanHz = meta[1]
+        lines += 1
+        if centreHz != meta[0] { centreHz = meta[0] }
+        if spanHz != meta[1] { spanHz = meta[1] }
         // the desktop's range tracking runs in its drawing code, so the floor is measured here: the 20th percentile of the line, smoothed
-        let floorNow = bins.sorted()[Self.binCount / 5]
+        let sample = stride(from: 0, to: Self.binCount, by: 16).map { bins[$0] }.sorted()
+        let floorNow = sample[sample.count / 5]
         noiseFloor = noiseFloor < -500 ? floorNow : noiseFloor + (floorNow - noiseFloor) * 0.05
         let low = noiseFloor - 3, range: Float = 45
         for i in 0..<Self.binCount {
@@ -114,6 +120,13 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
     func draw(in view: MTKView) {
         guard onair_is_started() else { return }
         takeLine()
+        frames += 1
+        if Date().timeIntervalSince(frameClock) >= 2 {
+            NSLog("OnAir spectrum %.0f fps, %d lines", Double(frames) / 2, lines)
+            frames = 0
+            lines = 0
+            frameClock = Date()
+        }
         guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let commands = queue.makeCommandBuffer(), let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
 

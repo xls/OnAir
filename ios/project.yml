@@ -10,6 +10,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: minimal
+    SWIFT_OPTIMIZATION_LEVEL: -O   # the spectrum's per-pixel loops are too slow unoptimised, also while developing
 targets:
   OnAir:
     type: application
@@ -48,6 +49,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.rizos.onair
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
