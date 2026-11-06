@@ -86,14 +86,3 @@ struct ModeBrowser: View {
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search modes")
     }
 }
-
-struct SettingsPage: View {
-    var body: some View {
-        List {
-            Section("OnAir") {
-                Button("Full C++ settings") { onair_set_page(ONAIR_PAGE_SETTINGS) }
-                Button("Full C++ interface") { onair_set_page(ONAIR_PAGE_TOUCH_SHELL) }
-            }
-        }
-    }
-}

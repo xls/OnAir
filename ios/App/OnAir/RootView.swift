@@ -1,6 +1,10 @@
 import OnAirCore
 import SwiftUI
 
+enum OnAirFamily {
+    static let fm = 5
+}
+
 enum Tab: CaseIterable, Identifiable {
     case device, spectrum, mode, settings
     var id: Self { self }
@@ -16,12 +20,13 @@ enum Tab: CaseIterable, Identifiable {
 }
 
 enum DevicePage: String, CaseIterable, Identifiable {
-    case source = "Source", gain = "Gain", tuner = "Tuner", mode = "Mode"
+    case source = "Source", gain = "Gain", radio = "Radio", mode = "Mode", display = "Display"
     var id: Self { self }
 }
 
 struct RootView: View {
     @State private var receiver = Receiver()
+    @State private var spectrum = SpectrumRenderer()
     @State private var tab = Tab.device
     @State private var devicePage = DevicePage.source
     @State private var started = false
@@ -34,7 +39,8 @@ struct RootView: View {
                 ChipRow(selection: $devicePage)
             }
             ZStack {
-                OnAirView()
+                OnAirView().opacity(0).allowsHitTesting(false)
+                Color.black
                 nativePage
             }
             BottomBar(tab: $tab, modeName: receiver.status.mode)
@@ -44,36 +50,53 @@ struct RootView: View {
             guard onair_is_started() else { return }
             if !started {
                 started = true
-                applyPage()
+                onair_set_page(ONAIR_PAGE_NONE)
+                if ProcessInfo.processInfo.arguments.contains("--start") { receiver.startStop() }
             }
             receiver.refresh()
         }
-        .onChange(of: tab) { applyPage() }
-        .onChange(of: devicePage) { applyPage() }
-        .onAppear(perform: applyPage)
+        .onAppear(perform: openLaunchPage)
     }
 
-    /// Pages that are native so far. Everything else shows the C++ panel underneath. They read from C++, so they wait until it has started,
+    /// Every page is native. They read from C++, so they wait until it has started,
     /// which happens once OnAirView has a size.
     @ViewBuilder private var nativePage: some View {
         if !started {
             ProgressView()
         } else if tab == .device && devicePage == .source {
             SourcePage(receiver: receiver)
+        } else if tab == .device && devicePage == .gain {
+            GainPage()
+        } else if tab == .device && devicePage == .radio {
+            RadioSettingsPage()
         } else if tab == .device && devicePage == .mode {
             ModeBrowser(receiver: receiver) { tab = .mode }
+        } else if tab == .device && devicePage == .display {
+            SettingsPage(only: "Spectrum and waterfall")
+        } else if tab == .spectrum {
+            SpectrumPage(receiver: receiver, spectrum: spectrum)
+        } else if tab == .mode {
+            if receiver.status.family == OnAirFamily.fm {
+                FMRadioPage(receiver: receiver)
+            } else {
+                ModeResultsPage(receiver: receiver)
+            }
         } else if tab == .settings {
-            SettingsPage()
+            SettingsPage(only: nil)
         }
     }
 
-    private func applyPage() {
-        switch (tab, devicePage) {
-        case (.device, .gain): onair_set_page(ONAIR_PAGE_GAIN)
-        case (.device, .tuner): onair_set_page(ONAIR_PAGE_TUNER)
-        case (.spectrum, _): onair_set_page(ONAIR_PAGE_RECEIVER)
-        case (.mode, _): onair_set_page(ONAIR_PAGE_MODE)
-        default: break
+    /// `--page settings`, `--page gain` and so on open a page at launch, for checking screens from the Mac.
+    private func openLaunchPage() {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--page"), i + 1 < args.count else { return }
+        switch args[i + 1] {
+        case "settings": tab = .settings
+        case "fm":
+            tab = .mode
+        case "spectrum": tab = .spectrum
+        case "mode": tab = .mode
+        default: devicePage = DevicePage.allCases.first { $0.rawValue.lowercased() == args[i + 1] } ?? .source
         }
     }
 }

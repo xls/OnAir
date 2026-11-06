@@ -14,8 +14,9 @@ set(DECT2_BUNDLE_CODEC2 OFF CACHE BOOL "" FORCE)
 add_subdirectory("${_onair_repo}" "${CMAKE_BINARY_DIR}/onair-core" EXCLUDE_FROM_ALL)
 
 set(ONAIR_IIO_SYMBOLS "" CACHE FILEPATH "Generated table of libiio functions (build_core.sh)")
-target_sources(dect2 PRIVATE ../host/onair_host.mm ../shim/glfw_shim.mm ../platform/power_ios.mm ../platform/airplay_ios.mm)
-target_include_directories(dect2 PRIVATE include)
+# results_json.cpp turns telemetry into cards and tables. It has no Android code in it, so it is shared rather than copied
+target_sources(dect2 PRIVATE "${_onair_repo}/android/native/src/results_json.cpp" ../host/onair_host.mm ../shim/glfw_shim.mm ../platform/power_ios.mm ../platform/airplay_ios.mm)
+target_include_directories(dect2 PRIVATE include "${_onair_repo}/android/native/src")
 
 add_library(onair_ios STATIC src/stubs_ext.c "${ONAIR_IIO_SYMBOLS}")
 target_link_libraries(onair_ios PRIVATE dect2)

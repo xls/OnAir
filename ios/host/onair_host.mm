@@ -4,6 +4,9 @@
 #include "main_internal.h"
 #include "imgui_internal.h"
 #include "ui/touch.h"
+#include "ui/settings_table.h"
+#include "gfx/colormap.h"
+#include "results_json.h"
 #include "platform/power.h"
 #include "dect2/common/thread_name.h"
 #include "dect2/net/netradio.h"
@@ -19,11 +22,28 @@ namespace gfx { void setHostLayer(CAMetalLayer* layer); void setBackground(bool 
 namespace power { void setHostOccluded(bool on); }                                     // ios/platform/power_ios.mm
 void routeTab(App& a, const std::string& name);                                     // ui/main_tabs.cpp
 
+bool settingsIsBound(const settings::Info& i);                                       // ui/settings_window.cpp
+settings::Val settingsRead(App& a, const settings::Info& i);
+void settingsWrite(App& a, const settings::Info& i, const settings::Val& v);
+
 namespace {
 constexpr int kFamilyFm = 5;
 OnAirPage gPage = ONAIR_PAGE_TOUCH_SHELL;
 bool gBackground = false, gStarted = false;
-std::string gStatus;
+std::string gStatus, gJson;
+
+std::string quoted(const std::string& s) { return "\"" + dect2::jsonEscape(s) + "\""; }
+std::string textOf(double v) { return dect2::jsonNum(v); }
+
+// settings with no meaning on iOS
+bool settingHidden(const settings::Info& i) { return i.cat == settings::kPlugins || i.cat == settings::kNetwork; }
+
+const settings::Info* settingByKey(const char* key) {
+    for (const settings::Info& i : settings::table()) if (!strcmp(i.key, key)) return &i;
+    return nullptr;
+}
+
+void retuneIfRunning(App& a) { if (a.engine.running()) a.engine.retune(a.tune); }
 
 // ---- fingers: the first one is ImGui's mouse; a second one cancels its press, so a pinch never tunes or drags
 struct Finger { int id; float x, y; };
@@ -52,6 +72,7 @@ void pageBody(App& a, ImVec2) {
         if (a.devices[a.devIdx].isRadio()) radioSettingsUi(a, true);
         break;
     case ONAIR_PAGE_GAIN: toolbarParts(a, TbGain, true); break;
+    case ONAIR_PAGE_NONE: break;
     case ONAIR_PAGE_LIST: rightPanel(a); break;
     case ONAIR_PAGE_ANALYSIS: constellationsTab(a); break;
     default: mainTabs(a); break;   // MODE, and SETTINGS under its window
@@ -205,6 +226,157 @@ const char* onair_mode_blurb(int i) { return kModes[i].blurb ? kModes[i].blurb :
 bool onair_mode_is_selected(int i) { return modeSelected(appRunApp(), kModes[i]); }
 void onair_mode_select(int i) { selectMode(appRunApp(), kModes[i].family, kModes[i].subId); }
 
+bool onair_spectrum(float* bins, int n, double* meta) {
+    App& a = appRunApp();
+    static uint64_t seq = 0;
+    dect2::SpectrumFrame f;
+    if (n <= 0 || !a.engine.latestSpectrum(f, seq) || f.dbfs.empty()) return false;
+    seq = f.seq;
+    const size_t N = f.dbfs.size();
+    for (int i = 0; i < n; i++) {
+        const size_t lo = (size_t)i * N / (size_t)n, hi = std::max(lo + 1, (size_t)(i + 1) * N / (size_t)n);
+        float top = f.dbfs[lo];
+        for (size_t k = lo + 1; k < hi && k < N; k++) top = std::max(top, f.dbfs[k]);
+        bins[i] = top;
+    }
+    meta[0] = a.engine.captureCentreHz();
+    meta[1] = a.engine.sampleRate();
+    meta[2] = a.yMin;
+    meta[3] = a.yMax;
+    meta[4] = a.wf.minDb;
+    meta[5] = a.wf.maxDb;
+    return true;
+}
+
+void onair_colormap(unsigned* rgba, int n) {
+    const int map = appRunApp().wf.effMap();
+    for (int i = 0; i < n; i++) rgba[i] = cmap::color(map, n > 1 ? (float)i / (float)(n - 1) : 0.f);
+}
+
+void onair_spectrum_tune(double mhz) { spectrumTune(appRunApp(), mhz); }
+
+const char* onair_fm_json(void) {
+    const auto& f = appRunApp().rx.fm;
+    gJson = "{\"state\":" + std::to_string(f.state) + ",\"station\":" + quoted(f.psName) + ",\"text\":" + quoted(f.radioText) + ",\"programme\":" + quoted(f.ptyText) +
+            ",\"stereo\":" + (f.stereo ? "true" : "false") + ",\"snrDb\":" + textOf(f.snrDb) + ",\"levelDbfs\":" + textOf(f.levelDbfs) + ",\"rds\":" + (f.rdsSync ? "true" : "false") +
+            ",\"rdsOk\":" + textOf(f.rdsBlockOkPct) + ",\"traffic\":" + (f.trafficProgram ? "true" : "false") + "}";
+    return gJson.c_str();
+}
+
+const char* onair_results_json(void) {
+    App& a = appRunApp();
+    gJson = onair::resultsJson(a.rx, a.engine.running());
+    return gJson.c_str();
+}
+
+const char* onair_settings_json(void) {
+    App& a = appRunApp();
+    std::string out = "[";
+    for (const settings::Info& i : settings::table()) {
+        if (settingHidden(i) || !settingsIsBound(i)) continue;
+        const settings::Val v = settingsRead(a, i);
+        const char* kind = i.kind == settings::Kind::Bool ? "bool" : i.kind == settings::Kind::Choice ? "choice" : i.kind == settings::Kind::Int ? "int" :
+                           i.kind == settings::Kind::Float ? "float" : "text";
+        std::string names = "[";
+        if (i.kind == settings::Kind::Choice) {
+            bool first = true;
+            for (const std::string& c : settings::split(i.choices ? i.choices : "", '|')) { names += (first ? "" : ",") + quoted(tr(c.c_str())); first = false; }
+        }
+        names += "]";
+        const double shown = i.kind == settings::Kind::Choice ? (double)settings::choiceIndex(i, v.d) : v.d;
+        if (out.size() > 1) out += ",";
+        out += "{\"key\":" + quoted(i.key) + ",\"category\":" + quoted(tr(i.cat)) + ",\"label\":" + quoted(tr(i.label)) + ",\"help\":" + quoted(tr(i.tip)) +
+               ",\"kind\":\"" + kind + "\",\"value\":" + textOf(shown) + ",\"text\":" + quoted(v.s) + ",\"lo\":" + textOf(i.lo) + ",\"hi\":" + textOf(i.hi) +
+               ",\"choices\":" + names + "}";
+    }
+    gJson = out + "]";
+    return gJson.c_str();
+}
+
+void onair_setting_set(const char* key, double value) {
+    const settings::Info* i = settingByKey(key);
+    if (!i) return;
+    settings::Val v;
+    v.d = i->kind == settings::Kind::Choice ? settings::choiceValue(*i, (int)value) : value;
+    settingsWrite(appRunApp(), *i, v);
+}
+
+void onair_setting_set_text(const char* key, const char* value) {
+    const settings::Info* i = settingByKey(key);
+    if (!i) return;
+    settings::Val v;
+    v.s = value;
+    settingsWrite(appRunApp(), *i, v);
+}
+
+const char* onair_gain_json(void) {
+    App& a = appRunApp();
+    const DeviceInfo& d = a.devices[(size_t)a.devIdx];
+    const int dc = a.engine.autoOffset() ? 2 : a.engine.iqFix().dc ? 1 : 0;
+    gJson = std::string("{\"radio\":") + (d.isRadio() ? "true" : "false") + ",\"generic\":" + (d.isGeneric() ? "true" : "false") + ",\"lo\":" + textOf(d.gainMinDb) +
+            ",\"hi\":" + textOf(std::max(d.gainMaxDb, d.gainMinDb + 1.0)) + ",\"db\":" + textOf(a.tune.gainDb) + ",\"agc\":" + (a.agcOn ? "true" : "false") +
+            ",\"iq\":" + (a.engine.iqFix().iq ? "true" : "false") + ",\"dc\":" + std::to_string(dc) + "}";
+    return gJson.c_str();
+}
+
+void onair_gain_set(double db) {
+    App& a = appRunApp();
+    a.tune.gainDb = std::round(db);
+    a.agcOn = false;
+    retuneIfRunning(a);
+}
+
+void onair_agc_set(bool on) { appRunApp().agcOn = on; }
+
+void onair_iq_fix_set(bool iq) {
+    App& a = appRunApp();
+    a.engine.iqFix().iq = iq;
+    savePrefs(a);
+}
+
+void onair_dc_mode_set(int mode) {
+    App& a = appRunApp();
+    const bool wasOffset = a.engine.autoOffset();
+    a.engine.iqFix().dc = mode == 1;
+    a.engine.setAutoOffset(mode == 2);
+    savePrefs(a);
+    if (wasOffset != (mode == 2) && a.engine.running()) startReceiver(a);   // offset tuning is set up when the radio opens
+}
+
+const char* onair_radio_settings_json(void) {
+    App& a = appRunApp();
+    const DeviceInfo& d = a.devices[(size_t)a.devIdx];
+    std::string out = "[";
+    for (const dect2::RadioSetting& r : d.settings) {
+        const char* kind = r.type == dect2::RadioSetting::Bool ? "bool" : r.type == dect2::RadioSetting::Choice ? "choice" : "number";
+        const auto now = a.tune.radio.find(r.key);
+        std::string values = "[", names = "[";
+        for (size_t k = 0; k < r.values.size(); k++) {
+            values += (k ? "," : "") + quoted(r.values[k]);
+            names += (k ? "," : "") + quoted(k < r.names.size() ? r.names[k] : r.values[k]);
+        }
+        if (out.size() > 1) out += ",";
+        out += "{\"key\":" + quoted(r.key) + ",\"label\":" + quoted(tr(r.label.c_str())) + ",\"help\":" + quoted(tr(r.help.c_str())) + ",\"kind\":\"" + kind +
+               "\",\"value\":" + quoted(now != a.tune.radio.end() ? now->second : r.def) + ",\"lo\":" + textOf(r.minV) + ",\"hi\":" + textOf(r.maxV) + ",\"step\":" + textOf(r.step) +
+               ",\"unit\":" + quoted(r.unit) + ",\"values\":" + values + "],\"names\":" + names + "]}";
+    }
+    gJson = out + "]";
+    return gJson.c_str();
+}
+
+void onair_radio_setting_set(const char* key, const char* value) {
+    App& a = appRunApp();
+    const DeviceInfo& d = a.devices[(size_t)a.devIdx];
+    for (const dect2::RadioSetting& r : d.settings) {
+        if (r.key != key) continue;
+        a.tune.radio[r.key] = value;
+        saveRadioSettings(a);
+        if (!a.engine.running()) return;
+        if (r.restart) startReceiver(a); else a.engine.retune(a.tune);
+        return;
+    }
+}
+
 const char* onair_status_json(void) {
     App& a = appRunApp();
     std::string mode;
@@ -212,7 +384,7 @@ const char* onair_status_json(void) {
     const std::string source = a.devIdx >= 0 && a.devIdx < (int)a.devices.size() ? a.devices[(size_t)a.devIdx].name : "";
     gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
               dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +
-              ",\"muted\":" + (a.muted ? "true" : "false") + "}";
+              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + "}";
     return gStatus.c_str();
 }
 

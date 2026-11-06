@@ -374,3 +374,8 @@ int settingsUnboundRows() {
     for (const Info& i : table()) if (!isCustom(i) && !bindOf(i)) { fprintf(stderr, "settings: no field for %s\n", i.key); n++; }
     return n;
 }
+
+// The same bindings for a native settings screen (ios/host), so both front ends read and write the same values
+bool settingsIsBound(const settings::Info& i) { return !isCustom(i) && bindOf(i); }
+settings::Val settingsRead(App& a, const settings::Info& i) { return readVal(a, i); }
+void settingsWrite(App& a, const settings::Info& i, const settings::Val& v) { writeVal(a, i, v); }

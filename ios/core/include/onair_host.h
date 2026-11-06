@@ -13,7 +13,8 @@ typedef enum {
     ONAIR_PAGE_LIST,           // rightPanel(): stations, services, aircraft ...
     ONAIR_PAGE_ANALYSIS,       // constellationsTab()
     ONAIR_PAGE_SETTINGS,       // settingsWindow()
-    ONAIR_PAGE_TOUCH_SHELL     // the whole touch shell, unchanged (the fallback)
+    ONAIR_PAGE_TOUCH_SHELL,    // the whole touch shell, unchanged
+    ONAIR_PAGE_NONE            // nothing drawn: the receiver logic keeps running behind the native screens
 } OnAirPage;
 
 // lifecycle
@@ -61,6 +62,32 @@ const char* onair_mode_group(int i);
 const char* onair_mode_blurb(int i);
 bool onair_mode_is_selected(int i);
 void onair_mode_select(int i);
+
+// settings, from app/ui/settings_table.h: a JSON array of rows; Choice is set by the index of the choice
+const char* onair_settings_json(void);
+void onair_setting_set(const char* key, double value);
+void onair_setting_set_text(const char* key, const char* value);
+
+// gain and the selected radio's own settings (DeviceInfo::settings)
+const char* onair_gain_json(void);
+void onair_gain_set(double db);
+void onair_agc_set(bool on);
+void onair_iq_fix_set(bool iq);
+void onair_dc_mode_set(int mode);                                // 0 leave, 1 remove, 2 tune beside it
+const char* onair_radio_settings_json(void);
+void onair_radio_setting_set(const char* key, const char* value);
+
+// native spectrum: true when a new line was copied, decimated to n bins of dBFS.
+// meta: centre Hz, span Hz, spectrum min dB, spectrum max dB, waterfall min dB, waterfall max dB
+bool onair_spectrum(float* bins, int n, double* meta);
+void onair_colormap(unsigned* rgba, int n);                      // OnAir's selected waterfall colours, 0xAABBGGRR
+void onair_spectrum_tune(double mhz);                            // what a click on the desktop's spectrum does
+
+// FM: state 0 searching, 1 tracking, 2 locked; station, radio text, programme type, stereo, snrDb, levelDbfs, rds, rdsOk, traffic
+const char* onair_fm_json(void);
+
+// the active mode's decoded results: summary, cards and tables
+const char* onair_results_json(void);
 
 // state for the native strip: running, mhz, mode, source, volume, muted
 const char* onair_status_json(void);

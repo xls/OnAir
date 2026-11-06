@@ -2,14 +2,14 @@ import MetalKit
 import OnAirCore
 import UIKit
 
-/// Hosts the ImGui interface: one Metal layer, driven frame by frame, with touches and the keyboard passed to C++.
+/// Keeps the C++ receiver logic running, frame by frame. It sits hidden behind the native screens.
 final class OnAirMetalView: MTKView, MTKViewDelegate, UIKeyInput {
     private var started = false
 
     init() {
         super.init(frame: .zero, device: MTLCreateSystemDefaultDevice())
         colorPixelFormat = .bgra8Unorm
-        preferredFramesPerSecond = 60
+        preferredFramesPerSecond = 15   // only the receiver logic runs here: nothing it draws is on screen
         isMultipleTouchEnabled = true
         delegate = self
     }

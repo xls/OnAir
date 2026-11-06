@@ -12,6 +12,7 @@ final class Receiver {
         var source = ""
         var volume: Float = 1
         var muted = false
+        var family = -1
     }
 
     private(set) var status = Status()

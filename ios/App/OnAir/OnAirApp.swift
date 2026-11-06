@@ -16,7 +16,7 @@ struct OnAirApp: App {
     }
 }
 
-/// The C++ drawing surface. One instance stays alive for the whole app: native pages cover it, they never replace it.
+/// The hidden surface C++ runs on. One instance stays alive for the whole app.
 struct OnAirView: UIViewRepresentable {
     func makeUIView(context: Context) -> OnAirMetalView { OnAirMetalView() }
     func updateUIView(_ view: OnAirMetalView, context: Context) {}
