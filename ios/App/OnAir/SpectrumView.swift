@@ -334,7 +334,7 @@ struct SpectrumPage: View {
         lastScrub = done ? 0 : snapped
         lastTuneTime = Date()
         haptics.tick()
-        onair_spectrum_tune(snapped)
+        onair_spectrum_scrub(snapped)
         receiver.refresh()
         keepInView(mhz: snapped)
     }

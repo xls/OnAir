@@ -82,6 +82,7 @@ void onair_radio_setting_set(const char* key, const char* value);
 bool onair_spectrum(float* bins, int n, double* meta);
 void onair_colormap(unsigned* rgba, int n);                      // OnAir's selected waterfall colours, 0xAABBGGRR
 void onair_spectrum_tune(double mhz);                            // what a click on the desktop's spectrum does
+void onair_spectrum_scrub(double mhz);                           // an exact frequency, with no channel raster: the decoder moves, the radio only past the capture's edge
 
 // FM: state 0 searching, 1 tracking, 2 locked; station, radio text, programme type, stereo, snrDb, levelDbfs, rds, rdsOk, traffic
 const char* onair_fm_json(void);

@@ -255,6 +255,13 @@ void onair_colormap(unsigned* rgba, int n) {
 
 void onair_spectrum_tune(double mhz) { spectrumTune(appRunApp(), mhz); }
 
+void onair_spectrum_scrub(double mhz) {
+    App& a = appRunApp();
+    const double halfSpanMhz = a.engine.sampleRate() / 2e6 * 0.9;
+    if (a.engine.running() && std::fabs(mhz - a.engine.captureCentreHz() / 1e6) < halfSpanMhz) tuneDecode(a, mhz);
+    else tuneFreq(a, mhz);
+}
+
 const char* onair_fm_json(void) {
     const auto& f = appRunApp().rx.fm;
     gJson = "{\"state\":" + std::to_string(f.state) + ",\"station\":" + quoted(f.psName) + ",\"text\":" + quoted(f.radioText) + ",\"programme\":" + quoted(f.ptyText) +
