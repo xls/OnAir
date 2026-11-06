@@ -20,6 +20,7 @@ namespace power { void setHostOccluded(bool on); }                              
 void routeTab(App& a, const std::string& name);                                     // ui/main_tabs.cpp
 
 namespace {
+constexpr int kFamilyFm = 5;
 OnAirPage gPage = ONAIR_PAGE_TOUCH_SHELL;
 bool gBackground = false, gStarted = false;
 std::string gStatus;
@@ -73,6 +74,10 @@ bool onair_start(void* layer, const char*) {
         held = s ? s.UTF8String : "";
         return held.c_str();
     };
+    if (![NSUserDefaults.standardUserDefaults boolForKey:@"onair.ios.startMode"]) {   // the first launch starts on FM, then the user's choice is kept
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"onair.ios.startMode"];
+        selectMode(appRunApp(), kFamilyFm);
+    }
     gStarted = true;
     appRunApp().touchUi = true;   // main_window.cpp:113 leaves the work area unknown on Apple systems, so autoTouch() never fires
     return true;
