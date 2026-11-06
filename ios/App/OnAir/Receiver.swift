@@ -16,10 +16,13 @@ final class Receiver {
     }
 
     private(set) var status = Status()
+    private(set) var devices: [String] = []
 
     func refresh() {
         guard let text = onair_status_json() else { return }
         if let new = try? JSONDecoder().decode(Status.self, from: Data(String(cString: text).utf8)) { status = new }
+        let names = (0..<onair_device_count()).map { String(cString: onair_device_name($0)) }
+        if names != devices { devices = names }
     }
 
     func startStop() { onair_start_stop(); refresh() }

@@ -45,7 +45,7 @@ struct RootView: View {
             }
             BottomBar(tab: $tab, modeName: receiver.status.mode)
         }
-        .background(Color.black)
+        .background(BrushedMetal(tone: 0.46).ignoresSafeArea())
         .onReceive(tick) { _ in
             guard onair_is_started() else { return }
             if !started {
@@ -55,7 +55,10 @@ struct RootView: View {
             }
             receiver.refresh()
         }
-        .onAppear(perform: openLaunchPage)
+        .onAppear {
+            TiltLight.shared.start()
+            openLaunchPage()
+        }
     }
 
     /// Every page is native. They read from C++, so they wait until it has started,
@@ -101,43 +104,44 @@ struct RootView: View {
     }
 }
 
-/// Frequency, start and stop, and mute, on every tab.
+/// The top of the unit: power, a lit frequency window and the mute key.
 struct StatusStrip: View {
     let receiver: Receiver
     @State private var typing = false
     @State private var typed = ""
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button {
-                receiver.startStop()
-            } label: {
-                Image(systemName: receiver.status.running ? "stop.fill" : "play.fill")
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(receiver.status.running ? .red : .green)
+        ZStack {
+            BrushedMetal(tone: 0.46)
+            HStack(spacing: 10) {
+                HardwareKey(lit: receiver.status.running, led: .green, action: receiver.startStop) {
+                    EngravedLabel(text: receiver.status.running ? "STOP" : "POWER", size: 8)
+                }
+                .frame(width: 62)
 
-            Button {
-                typed = String(format: "%.3f", receiver.status.mhz)
-                typing = true
-            } label: {
-                Text(String(format: "%.3f MHz", receiver.status.mhz))
-                    .font(.title3.monospacedDigit().weight(.semibold))
-            }
-            .tint(.primary)
+                Button {
+                    typed = String(format: "%.3f", receiver.status.mhz)
+                    typing = true
+                } label: {
+                    GlassWindow(corner: 6) {
+                        Text(String(format: "%.3f MHz", receiver.status.mhz))
+                            .font(.system(size: 20, weight: .medium, design: .monospaced))
+                            .foregroundStyle(RadioTheme.amber)
+                            .shadow(color: RadioTheme.amber.opacity(0.8), radius: 6)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .buttonStyle(.plain)
 
-            Spacer()
-
-            Button {
-                receiver.setMuted(!receiver.status.muted)
-            } label: {
-                Image(systemName: receiver.status.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                HardwareKey(lit: receiver.status.muted, led: .red, action: { receiver.setMuted(!receiver.status.muted) }) {
+                    EngravedLabel(text: "MUTE", size: 8)
+                }
+                .frame(width: 62)
             }
-            .tint(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 6)
+        .frame(height: 58)
         .alert("Frequency", isPresented: $typing) {
             TextField("MHz", text: $typed).keyboardType(.decimalPad)
             Button("Tune") {
@@ -148,54 +152,58 @@ struct StatusStrip: View {
     }
 }
 
+/// A row of machined keys.
 struct ChipRow<Item: Hashable & Identifiable & RawRepresentable & CaseIterable>: View where Item.RawValue == String, Item.AllCases: RandomAccessCollection {
     @Binding var selection: Item
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        ZStack {
+            BrushedMetal(tone: 0.46)
+            HStack(spacing: 5) {
                 ForEach(Item.allCases) { item in
-                    Button(item.rawValue) { selection = item }
-                        .buttonStyle(.bordered)
-                        .tint(item == selection ? .accentColor : .secondary)
+                    HardwareKey(lit: item == selection, action: { selection = item }) {
+                        EngravedLabel(text: item.rawValue.uppercased(), size: 8)
+                    }
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 8)
             .padding(.vertical, 6)
         }
+        .frame(height: 54)
     }
 }
 
+/// The keys along the bottom of the unit.
 struct BottomBar: View {
     @Binding var tab: Tab
     let modeName: String
 
     private func title(_ item: Tab) -> String {
         switch item {
-        case .device: "Device"
-        case .spectrum: "Spectrum"
-        case .mode: modeName.isEmpty ? "Mode" : modeName
-        case .settings: "Settings"
+        case .device: "DEVICE"
+        case .spectrum: "SPECTRUM"
+        case .mode: modeName.isEmpty ? "MODE" : modeName.uppercased()
+        case .settings: "SETTINGS"
         }
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Tab.allCases) { item in
-                Button {
-                    tab = item
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: item.icon).font(.title3)
-                        Text(title(item)).font(.caption2).lineLimit(1)
+        ZStack {
+            BrushedMetal(tone: 0.46)
+            HStack(spacing: 7) {
+                ForEach(Tab.allCases) { item in
+                    HardwareKey(lit: item == tab, led: RadioTheme.teal, action: { tab = item }) {
+                        VStack(spacing: 2) {
+                            Image(systemName: item.icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(Color(white: 0.1))
+                            EngravedLabel(text: title(item), size: 7).lineLimit(1).minimumScaleFactor(0.6)
+                        }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .contentShape(Rectangle())
                 }
-                .tint(item == tab ? .accentColor : .secondary)
             }
+            .padding(.horizontal, 9)
+            .padding(.top, 7)
+            .padding(.bottom, 4)
         }
-        .padding(.top, 6)
-        .background(.bar)
+        .frame(height: 72)
     }
 }

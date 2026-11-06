@@ -22,6 +22,7 @@ targets:
       - sdk: AudioToolbox.framework
       - sdk: AVFoundation.framework
       - sdk: CFNetwork.framework
+      - sdk: CoreMotion.framework
       - sdk: CoreMedia.framework
       - sdk: CoreVideo.framework
       - sdk: AVKit.framework

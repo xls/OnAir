@@ -30,53 +30,60 @@ struct FMRadioPage: View {
     }
 
     var body: some View {
-        VStack(spacing: 14) {
-            display
-            HStack(spacing: 12) {
-                NeedleMeter(title: "SIGNAL", value: receiver.status.running ? min(max(fm.snrDb / 60, 0), 1) : 0, scale: ["0", "20", "40", "60"])
-                lamps
-            }
-            .frame(height: 104)
-            BandScale(mhz: receiver.status.mhz, lowMhz: 87.5, highMhz: 108, stepMhz: Self.step, tune: receiver.tune(mhz:))
-                .frame(height: 62)
-            HStack(spacing: 16) {
-                memoryColumn(0..<3)
-                TuningKnob(stepsPerTurn: 40) { steps in
-                    receiver.tune(mhz: min(max(receiver.status.mhz + Double(steps) * Self.step, 87.5), 108))
+        FacePlate {
+            VStack(spacing: 12) {
+                display
+                HStack(spacing: 12) {
+                    NeedleMeter(title: "SIGNAL", value: receiver.status.running ? min(max(fm.snrDb / 60, 0), 1) : 0, scale: ["0", "20", "40", "60"])
+                    lamps
                 }
-                memoryColumn(3..<6)
+                .frame(height: 96)
+                BandScale(mhz: receiver.status.mhz, lowMhz: 87.5, highMhz: 108, stepMhz: Self.step, tune: receiver.tune(mhz:))
+                    .frame(height: 56)
+                HStack(spacing: 14) {
+                    memoryColumn(0..<3)
+                    VStack(spacing: 3) {
+                        TuningKnob(stepsPerTurn: 40) { steps in
+                            receiver.tune(mhz: min(max(receiver.status.mhz + Double(steps) * Self.step, 87.5), 108))
+                        }
+                        EngravedLabel(text: "TUNING")
+                    }
+                    memoryColumn(3..<6)
+                }
+                .frame(maxHeight: .infinity)
             }
-            .frame(maxHeight: .infinity)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
         }
-        .padding(14)
-        .background(RadioTheme.panel)
-        .onAppear(perform: load)
+        .onAppear {
+            TiltLight.shared.start()
+            load()
+        }
         .onReceive(tick) { _ in load() }
     }
 
     private var display: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(String(format: "%.1f", receiver.status.mhz))
-                    .font(.system(size: 54, weight: .light, design: .rounded).monospacedDigit())
-                Text("MHz").font(.system(size: 14, weight: .medium, design: .rounded))
-                Spacer()
-                Text(locked && !fm.station.isEmpty ? fm.station : "· · · · ·")
-                    .font(.system(size: 21, weight: .semibold, design: .monospaced))
-                    .lineLimit(1)
+        GlassWindow(corner: 8) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(String(format: "%.1f", receiver.status.mhz))
+                        .font(.system(size: 50, weight: .light, design: .monospaced))
+                    Text("MHz").font(.system(size: 12, weight: .medium, design: .monospaced))
+                    Spacer()
+                    Text(locked && !fm.station.isEmpty ? fm.station : "· · · · ·")
+                        .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(RadioTheme.amber)
+                .shadow(color: RadioTheme.amber.opacity(0.8), radius: 8)
+                Text(displayLine)
+                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .foregroundStyle(RadioTheme.amber.opacity(0.75))
+                    .lineLimit(2, reservesSpace: true)
             }
-            .foregroundStyle(RadioTheme.amber)
-            .shadow(color: RadioTheme.amber.opacity(0.65), radius: 9)
-            Text(displayLine)
-                .font(.system(size: 13, weight: .regular, design: .rounded))
-                .foregroundStyle(RadioTheme.amber.opacity(0.75))
-                .lineLimit(2, reservesSpace: true)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RadioTheme.glass)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.25), lineWidth: 1))
     }
 
     private var displayLine: String {
@@ -93,7 +100,10 @@ struct FMRadioPage: View {
             RadioLamp(label: "RDS", lit: locked && fm.rds)
             RadioLamp(label: "TRAFFIC", lit: locked && fm.traffic)
         }
-        .frame(width: 92, alignment: .leading)
+        .padding(.horizontal, 10)
+        .frame(width: 104, height: 96, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(RadioTheme.glass))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LinearGradient(colors: [.black, .white.opacity(0.35)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5))
     }
 
     private func memoryColumn(_ range: Range<Int>) -> some View {
@@ -125,20 +135,16 @@ private struct MemoryButton: View {
     let save: () -> Void
 
     var body: some View {
-        VStack(spacing: 1) {
-            Text(String(number)).font(.system(size: 9, weight: .bold, design: .rounded)).foregroundStyle(.secondary)
-            Text(mhz > 0 ? String(format: "%.1f", mhz) : "—")
-                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(mhz > 0 ? RadioTheme.amber : Color(white: 0.4))
+        HardwareKey(lit: mhz > 0, action: recall) {
+            VStack(spacing: 0) {
+                EngravedLabel(text: String(number), size: 8)
+                Text(mhz > 0 ? String(format: "%.1f", mhz) : "")
+                    .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(Color(white: 0.09))
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(LinearGradient(colors: [Color(white: 0.24), Color(white: 0.12)], startPoint: .top, endPoint: .bottom))
-        .clipShape(RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color(white: 0.3), lineWidth: 1))
-        .contentShape(Rectangle())
-        .onTapGesture(perform: recall)
         .onLongPressGesture {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             save()
         }
     }

@@ -6,14 +6,10 @@ struct SourcePage: View {
     let receiver: Receiver
     @State private var showAdd = false
 
-    private var names: [String] {
-        (0..<onair_device_count()).map { String(cString: onair_device_name($0)) }
-    }
-
     var body: some View {
         List {
             Section {
-                ForEach(Array(names.enumerated()), id: \.offset) { index, name in
+                ForEach(Array(receiver.devices.enumerated()), id: \.offset) { index, name in
                     Button {
                         onair_device_select(Int32(index))
                         receiver.refresh()
