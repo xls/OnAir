@@ -170,14 +170,14 @@ private struct SpectrumMetalView: UIViewRepresentable {
     func updateUIView(_ view: MTKView, context: Context) {}
 }
 
-/// Reads the finger gestures. UIKit is used here because it can tell one finger from two. Two fingers either scrub or zoom, whichever their
+/// Reads the finger gestures. UIKit is used here because it can tell one finger from two. Two fingers either pan or zoom, whichever their
 /// first movement shows; after that the gesture stays that kind until the fingers lift.
 private struct SpectrumGestures: UIViewRepresentable {
-    enum TwoFingers { case undecided, scrub, zoom }
+    enum TwoFingers { case undecided, pan, zoom }
 
     let tap: (CGFloat) -> Void
-    let pan: (CGFloat, Bool) -> Void                // change in points since the last call, finished
-    let scrub: (CGFloat, Bool) -> Void              // points from the start, finished
+    let scrub: (CGFloat, Bool) -> Void              // one finger: points from the start, finished
+    let pan: (CGFloat, Bool) -> Void                // two fingers: change in points since the last call, finished
     let zoom: (Double, Bool) -> Void                // scale from the start, finished
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -205,7 +205,6 @@ private struct SpectrumGestures: UIViewRepresentable {
         var parent: SpectrumGestures?
         private var lastPan: CGFloat = 0
         private var mode = TwoFingers.undecided
-        private var translation: CGFloat = 0
         private var scale = 1.0
 
         func gestureRecognizer(_ a: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith b: UIGestureRecognizer) -> Bool { true }
@@ -213,18 +212,18 @@ private struct SpectrumGestures: UIViewRepresentable {
         @objc func tapped(_ r: UITapGestureRecognizer) { parent?.tap(r.location(in: r.view).x) }
 
         @objc func panned(_ r: UIPanGestureRecognizer) {
-            let x = r.translation(in: r.view).x
-            if r.state == .began { lastPan = 0 }
-            let done = r.state == .ended || r.state == .cancelled
-            parent?.pan(x - lastPan, done)
-            lastPan = x
+            parent?.scrub(r.translation(in: r.view).x, r.state == .ended || r.state == .cancelled)
         }
 
         @objc func twoPanned(_ r: UIPanGestureRecognizer) {
-            translation = r.translation(in: r.view).x
+            let x = r.translation(in: r.view).x
             let done = r.state == .ended || r.state == .cancelled
-            if mode == .undecided, abs(translation) > 14 { mode = .scrub }
-            if mode == .scrub { parent?.scrub(translation, done) }
+            if mode == .undecided, abs(x) > 14 {
+                mode = .pan
+                lastPan = x   // the view starts moving here, without a jump
+            }
+            if mode == .pan { parent?.pan(x - lastPan, done) }
+            lastPan = x
             if done { finish() }
         }
 
@@ -238,13 +237,13 @@ private struct SpectrumGestures: UIViewRepresentable {
 
         private func finish() {
             mode = .undecided
-            translation = 0
+            lastPan = 0
             scale = 1
         }
     }
 }
 
-/// One finger pans, two fingers scrub the tuning, a pinch zooms, a tap jumps to a frequency.
+/// One finger scrubs the tuning, two fingers pan, a pinch zooms, a tap jumps to a frequency.
 struct SpectrumPage: View {
     let receiver: Receiver
     let spectrum: SpectrumRenderer
@@ -272,10 +271,16 @@ struct SpectrumPage: View {
                         onair_spectrum_tune(spectrum.frequency(atFraction: x / width) / 1e6)
                         receiver.refresh()
                     },
-                    pan: { change, done in pan(change: change, width: width, done: done) },
                     scrub: { points, done in scrub(points: points, width: width, done: done) },
+                    pan: { change, done in pan(change: change, width: width, done: done) },
                     zoom: { scale, done in zoom(scale: scale, done: done) }
                 )
+                HardwareKey(lit: spectrum.visibleSpan < 1, action: resetZoom) {
+                    EngravedLabel(text: "RESET", size: 8)
+                }
+                .frame(width: 66, height: 46)
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
     }
@@ -354,6 +359,11 @@ struct SpectrumPage: View {
         let high = spectrum.visibleCentre + spectrum.visibleSpan / 2 - margin
         if fraction < low { setView(centre: spectrum.visibleCentre - (low - fraction), span: spectrum.visibleSpan) }
         if fraction > high { setView(centre: spectrum.visibleCentre + (fraction - high), span: spectrum.visibleSpan) }
+    }
+
+    private func resetZoom() {
+        spectrum.visibleSpan = 1
+        spectrum.visibleCentre = 0.5
     }
 
     private func zoom(scale: Double, done: Bool) {
