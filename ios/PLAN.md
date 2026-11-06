@@ -36,7 +36,7 @@ Run on Xcode 27.1, iOS 27.1 SDK. UI prototype code is in `ios/spike/`.
 |---|---|---|
 | Does `dect2core` build for iOS? | Yes, device and simulator. About 1,350 objects, 4 failed before small fixes. Rust built unchanged after the target mapping. | Built and linked |
 | Size? | About 28 MB linked and dead-stripped. Full build 4 to 7 minutes on 8 cores. | Measured |
-| Does the engine run? | Yes on the simulator with the RemoteIO backend (`core/src/audio/audioout_ios.mm`): synthetic FM locks at 52 dB SNR in stereo with RDS, and audio plays in real time. The miniaudio abort is gone. | Measured on simulator; phone pending |
+| Does the engine run? | Yes on the simulator with the RemoteIO backend (`core/src/audio/audioout_ios.mm`): synthetic FM locks at 52 dB SNR in stereo with RDS, and audio plays in real time. The miniaudio abort is gone. | Measured on simulator and iPhone 18 Pro Max; sound heard on the phone |
 | Does `app/` build? | 371 of 376 files compile unchanged with a GLFW shim first on the include path. The other 5 are platform files, replaced or guarded in the prototype. | Compiled, not linked |
 | Metal rendering? | Real `gfx_metal.mm` with ImGui and NV12 video in an MTKView on the simulator. | Screenshot confirmed |
 | Full app, touch, keyboard, background audio, phone-width layout | Not run. | **Untested** |
@@ -125,7 +125,7 @@ decode it in real time. TV pages can still be built and tested with the built-in
 
 Each phase ends with something runnable.
 
-### 1. Project and core
+### 1. Project and core (done)
 - Create `ios/` Xcode project, build script, and driver CMake.
 - Apply the small shared-file edits: `cmake/OnairRust.cmake`, `CMakeLists.txt`, `core/src/engine/updater.cpp`, `core/src/power/power_apple.mm`.
 - Replace miniaudio on iOS with a small RemoteIO backend (`audioout_ios.mm`) behind the existing interface, and configure `AVAudioSession`.
