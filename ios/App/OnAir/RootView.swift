@@ -20,6 +20,12 @@ extension OnAirFamily {
     static let messaging: Set<Int> = [20, 23, 75]
 
     static func isHam(family: Int, mode: String) -> Bool { hamFamilies.contains(family) || mode == "General receiver" }
+
+    /// True when the mode opens a screen of its own rather than the generic results list. RootView's page choice follows the same sets.
+    static func hasNativeScreen(family: Int, mode: String) -> Bool {
+        family == fm || television.contains(family) || isHam(family: family, mode: mode) || broadcast.contains(family) || trackers.contains(family) ||
+            twoWay.contains(family) || messaging.contains(family)
+    }
 }
 
 enum Tab: CaseIterable, Identifiable {

@@ -265,6 +265,7 @@ int onair_mode_count(void) { return kNumModes; }
 const char* onair_mode_name(int i) { const ModeDef& m = kModes[i]; return m.sub && *m.sub ? m.sub : m.name; }
 const char* onair_mode_group(int i) { const int g = kModes[i].group; return g >= 0 && g < kNumGroups ? kGroupNames[g] : ""; }
 const char* onair_mode_blurb(int i) { return kModes[i].blurb ? kModes[i].blurb : ""; }
+int onair_mode_family(int i) { return kModes[i].family; }
 bool onair_mode_is_selected(int i) { return modeSelected(appRunApp(), kModes[i]); }
 void onair_mode_select(int i) { selectMode(appRunApp(), kModes[i].family, kModes[i].subId); }
 

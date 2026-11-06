@@ -60,6 +60,7 @@ int onair_mode_count(void);
 const char* onair_mode_name(int i);
 const char* onair_mode_group(int i);
 const char* onair_mode_blurb(int i);
+int onair_mode_family(int i);
 bool onair_mode_is_selected(int i);
 void onair_mode_select(int i);
 
