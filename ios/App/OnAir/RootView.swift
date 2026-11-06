@@ -106,6 +106,7 @@ struct RootView: View {
         if let bandwidth = value("--bw"), let mhz = Double(bandwidth) { onair_tv_bandwidth(mhz) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--start") { receiver.startStop() }
+        if let file = value("--ts") { onair_tv_play_file(file) }
         if args.contains("--mode") {
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
                 MainActor.assumeIsolated {

@@ -12,6 +12,9 @@
 #include "platform/platform.h"
 #include "dect2/tv/teletext.h"
 #include "dect2/tv/player.h"
+#include "dect2/tv/ts.h"
+#include <chrono>
+#include <thread>
 #include "platform/power.h"
 #include "dect2/common/thread_name.h"
 #include "dect2/net/netradio.h"
@@ -38,7 +41,7 @@ namespace {
 constexpr int kFamilyFm = 5;
 OnAirPage gPage = ONAIR_PAGE_TOUCH_SHELL;
 bool gBackground = false, gStarted = false;
-std::string gStatus, gJson;
+std::string gStatus, gJson, gVideoStatus;
 uint64_t gVideoFrames = 0;
 
 // which TV plans fit the mode on screen, and the settings key of the one chosen (the keys of app/bandplan/tvchan_ui.cpp)
@@ -337,6 +340,34 @@ void onair_tv_play(int serviceId) {
     a.playReq = serviceId;   // draw_ui.cpp starts it once its programme table has arrived, with the volume and language set
 }
 
+void onair_tv_play_file(const char* path) {
+    App& a = appRunApp();
+    a.engine.setPlayerExternal(true);
+    std::string file = path;
+    dect2::namedThread("onair-tsfile", [&a, file] {
+        FILE* f = fopen(file.c_str(), "rb");
+        if (!f) return;
+        constexpr size_t kPackets = 512;
+        std::vector<uint8_t> chunk(kPackets * 188);
+        dect2::TsDemux demux;
+        int sid = -1;
+        fseek(f, 0, SEEK_END);
+        const double bytesPerSecond = (double)ftell(f) / 60.0;   // the test files last a minute
+        fseek(f, 0, SEEK_SET);
+        for (;;) {
+            const size_t n = fread(chunk.data(), 188, kPackets, f);
+            if (n == 0) { fseek(f, 0, SEEK_SET); demux = dect2::TsDemux(); continue; }
+            for (size_t i = 0; i < n; i++) demux.feed(chunk.data() + i * 188);
+            const double seconds = (double)(n * 188) / bytesPerSecond;
+            demux.advance(seconds);
+            dect2::TsSnapshot snap = demux.snapshot();
+            if (sid < 0) for (const dect2::TsService& v : snap.services) if (v.havePmt) { sid = v.id; a.engine.player().select(sid); a.engine.player().setVolume(a.volume); }
+            a.engine.player().push(chunk.data(), n, snap);
+            std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+        }
+    }).detach();
+}
+
 int onair_tv_first_service(void) {
     App& a = appRunApp();
     if (a.engine.player().selected() >= 0 || a.playReq >= 0) return -1;
@@ -596,11 +627,15 @@ void onair_source_select_named(const char* source) {
 
 const char* onair_verify_line(void) {
     App& a = appRunApp();
+    if (a.engine.player().selected() >= 0) {
+        const dect2::PlayerStats st = a.engine.player().stats();
+        gVideoStatus = st.videoCodec + " " + std::to_string(st.width) + "x" + std::to_string(st.height) + " " + st.audioCodec + " hw=" + (st.hardware ? "1" : "0") + " decoded=" + std::to_string(st.decoded);
+    }
     const std::string json = onair::resultsJson(a.rx, a.engine.running());
     char head[200];
     snprintf(head, sizeof head, " running=%d std=%d audioSec=%.1f videoFrames=%llu services=%zu tsPackets=%llu rate=%.2f json=", a.engine.running() ? 1 : 0, a.rx.standard,
              dect2::audioIosPlayedFrames() / 48000.0, (unsigned long long)gVideoFrames, a.ts.services.size(), (unsigned long long)a.ts.totalPackets, a.engine.sampleRate() / 1e6);
-    gJson = head + json.substr(0, 900);
+    gJson = head + std::string("[") + gVideoStatus + "] " + json.substr(0, 900);
     return gJson.c_str();
 }
 

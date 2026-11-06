@@ -105,6 +105,7 @@ bool onair_video_latest(OnAirVideoFrame* frame);
 const char* onair_tv_json(void);
 void onair_tv_play(int serviceId);                               // -1 stops
 int onair_tv_first_service(void);                                // for testing: a service to play, -1 when none or one is playing
+void onair_tv_play_file(const char* path);                        // a recorded .ts through the demux and the player, at its own pace
 void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic
 const char* onair_epg_json(int serviceId);
 // Teletext: 25 rows of 40 cells. Each is bits 0-20 the character or the mosaic's six cells, 21-23 foreground, 24-26 background, 27 mosaic, 28-29 double height, 30 separated.
