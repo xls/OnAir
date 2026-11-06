@@ -36,6 +36,7 @@ extern char** environ;
 #include <functional>
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
+#include <TargetConditionals.h>
 #include "dect2/common/str.h"
 #include "dect2/common/timecompat.h"
 #endif
@@ -430,6 +431,8 @@ std::string runCapture(const std::string& cmd, int* rc = nullptr) {
 int runCommand(const std::string& cmd) {
 #if defined(_WIN32)
     return system(("\"" + cmd + "\"").c_str());
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+    (void)cmd; return -1;
 #else
     return system(cmd.c_str());
 #endif

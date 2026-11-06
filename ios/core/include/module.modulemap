@@ -1,0 +1,4 @@
+module OnAirCore {
+    header "onair_core.h"
+    export *
+}

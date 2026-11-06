@@ -1,0 +1,43 @@
+# The Xcode project is generated: `cd ios && xcodegen`. The core comes from tools/build_core.sh.
+name: OnAir
+options:
+  bundleIdPrefix: net.rizos
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: 7KUJHBBE4P
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+targets:
+  OnAir:
+    type: application
+    platform: iOS
+    sources: [App/OnAir]
+    dependencies:
+      - framework: build/OnAirCore.xcframework
+        embed: false
+      - sdk: Accelerate.framework
+      - sdk: AudioToolbox.framework
+      - sdk: AVFoundation.framework
+      - sdk: CFNetwork.framework
+      - sdk: CoreMedia.framework
+      - sdk: CoreVideo.framework
+      - sdk: Metal.framework
+      - sdk: Security.framework
+      - sdk: VideoToolbox.framework
+      - sdk: libc++.tbd
+      - sdk: libz.tbd
+      - sdk: libiconv.tbd
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.rizos.onair
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UIBackgroundModes: audio
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: OnAir connects to your PlutoSDR or rtl_tcp radio on the local network.

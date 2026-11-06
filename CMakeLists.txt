@@ -521,9 +521,9 @@ if(NOT ANDROID)
   target_link_directories(dect2core PUBLIC ${HACKRF_LIBRARY_DIRS})
 endif()
 target_include_directories(dect2core PRIVATE ${LIBUSB_INCLUDE_DIRS})
-if(ANDROID)
+if(ANDROID OR IOS)
   # Cross-compiling: the headers found on the build machine are enough to compile; its libraries are not for this CPU. The Android
-  # library (android/native) provides the few libusb / FFmpeg entry points itself.
+  # library (android/native) and the iOS library (ios/core) provide the few libusb / FFmpeg entry points themselves.
   target_include_directories(dect2core PRIVATE ${FFMPEG_INCLUDE_DIRS})
 else()
   target_link_directories(dect2core PUBLIC ${LIBUSB_LIBRARY_DIRS})
@@ -531,14 +531,23 @@ else()
 endif()
 if(APPLE)
   # Metal LDPC decoder and CoreAudio output
-  target_sources(dect2core PRIVATE core/src/dsp/gpu_ldpc.mm core/src/dsp/gpu_viterbi.mm core/src/audio/audioout_coreaudio.mm core/src/audio/audioin_coreaudio.mm core/src/audio/videoin_avfoundation.mm core/src/tv/conceal_apple.mm core/src/tv/iptv_http_cocoa.mm core/src/power/power_apple.mm)
+  target_sources(dect2core PRIVATE core/src/dsp/gpu_ldpc.mm core/src/dsp/gpu_viterbi.mm core/src/audio/videoin_avfoundation.mm core/src/tv/conceal_apple.mm core/src/tv/iptv_http_cocoa.mm core/src/power/power_apple.mm)
+  if(IOS)   # RemoteIO and AVAudioSession; receive only, so no microphone
+    target_sources(dect2core PRIVATE core/src/audio/audioout_ios.mm core/src/audio/audioin_ios.mm)
+    set_source_files_properties(core/src/audio/audioout_ios.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+  else()
+    target_sources(dect2core PRIVATE core/src/audio/audioout_coreaudio.mm core/src/audio/audioin_coreaudio.mm)
+  endif()
   set_source_files_properties(core/src/dsp/gpu_ldpc.mm core/src/dsp/gpu_viterbi.mm core/src/tv/conceal_apple.mm core/src/audio/videoin_avfoundation.mm core/src/tv/iptv_http_cocoa.mm core/src/power/power_apple.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
   if(DECT2_WIN_AVX2 AND (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" OR CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64"))
     # Intel Mac, opt-in: the whole receiver built for AVX2 (the program checks for it at start and says so if missing); off by default, see dect2/dsp/simd.h
     target_compile_options(dect2core PRIVATE -mavx2 -mfma)
     target_compile_definitions(dect2core PUBLIC DECT2_REQUIRES_AVX2)
   endif()
-  target_link_libraries(dect2core PUBLIC "-framework IOKit" "-framework Accelerate" "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation" "-framework Metal" "-framework Foundation" "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo" "-framework AVFoundation" pthread iconv)
+  if(NOT IOS)   # the iOS SDK has neither for an app
+    target_link_libraries(dect2core PUBLIC "-framework IOKit" "-framework CoreAudio")
+  endif()
+  target_link_libraries(dect2core PUBLIC "-framework Accelerate" "-framework AudioToolbox" "-framework CoreFoundation" "-framework Metal" "-framework Foundation" "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo" "-framework AVFoundation" pthread iconv)
 else()
   # no GPU decoder yet (stub), audio through miniaudio
   if(WIN32)

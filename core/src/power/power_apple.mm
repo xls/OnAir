@@ -1,8 +1,11 @@
-// macOS side of the power policy: the power source (IOKit), the thermal state (NSProcessInfo) and the App Nap hold.
+// Apple side of the power policy: the power source (IOKit, macOS only), the thermal state (NSProcessInfo) and the App Nap hold.
 #include "dect2/power/power.h"
 #import <Foundation/Foundation.h>
+#include <TargetConditionals.h>
+#if !TARGET_OS_IPHONE
 #include <IOKit/ps/IOPowerSources.h>
 #include <IOKit/ps/IOPSKeys.h>
+#endif
 #include <mutex>
 
 namespace dect2::power {
@@ -10,12 +13,14 @@ namespace dect2::power {
 Probe probePlatform() {
     Probe p;
     @autoreleasepool {
+#if !TARGET_OS_IPHONE
         CFTypeRef info = IOPSCopyPowerSourcesInfo();
         if (info) {
             CFStringRef type = IOPSGetProvidingPowerSourceType(info);   // "Battery Power" / "AC Power" / "UPS Power"
             if (type && CFStringCompare(type, CFSTR(kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo) p.onBattery = true;
             CFRelease(info);
         }
+#endif
         const NSProcessInfoThermalState t = [[NSProcessInfo processInfo] thermalState];
         p.thermalSerious = (t == NSProcessInfoThermalStateSerious || t == NSProcessInfoThermalStateCritical);
     }
