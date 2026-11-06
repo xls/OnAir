@@ -170,12 +170,15 @@ private struct SpectrumMetalView: UIViewRepresentable {
     func updateUIView(_ view: MTKView, context: Context) {}
 }
 
-/// Tap to tune, drag to move along the band, pinch to zoom.
+/// Tap to tune, drag to scrub the tuning, pinch to zoom.
 struct SpectrumPage: View {
     let receiver: Receiver
     let spectrum: SpectrumRenderer
     @State private var pinchStart: Double?
     @State private var dragStart: Double?
+    @State private var lastScrub = 0.0
+    @State private var lastScrubTime = Date.distantPast
+    @State private var haptics = DetentHaptics()
 
     var body: some View {
         GeometryReader { geometry in
@@ -226,13 +229,44 @@ struct SpectrumPage: View {
         }
     }
 
+    /// One finger scrubs the tuning: the marker follows the finger, and the receiver retunes as it moves.
     private func drag(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8).onChanged { value in
-            let start = dragStart ?? spectrum.visibleCentre
+        DragGesture(minimumDistance: 4).onChanged { value in
+            let start = dragStart ?? receiver.status.mhz
             dragStart = start
-            setView(centre: start - value.translation.width / width * spectrum.visibleSpan, span: spectrum.visibleSpan)
+            let spanMhz = (spectrum.highHz - spectrum.lowHz) / 1e6
+            let step = scrubStep(spanMhz: spanMhz, width: width)
+            let wanted = start + value.translation.width / width * spanMhz
+            let snapped = (wanted / step).rounded() * step
+            guard abs(snapped - lastScrub) >= step / 2, Date().timeIntervalSince(lastScrubTime) > 0.04 else { return }
+            lastScrub = snapped
+            lastScrubTime = Date()
+            haptics.tick()
+            onair_spectrum_tune(snapped)
+            receiver.refresh()
+            keepInView(mhz: snapped)
         }
-        .onEnded { _ in dragStart = nil }
+        .onEnded { _ in
+            dragStart = nil
+            lastScrub = 0
+        }
+    }
+
+    private func scrubStep(spanMhz: Double, width: CGFloat) -> Double {
+        if receiver.status.family == OnAirFamily.fm { return 0.1 }
+        let perPoint = spanMhz / max(width, 1)
+        return [0.0001, 0.001, 0.005, 0.0125, 0.025, 0.1, 0.5].first { $0 >= perPoint } ?? 1
+    }
+
+    /// While zoomed in, the view moves along with the marker when it nears an edge.
+    private func keepInView(mhz: Double) {
+        guard spectrum.visibleSpan < 1, spectrum.spanHz > 0 else { return }
+        let fraction = (mhz * 1e6 - spectrum.centreHz) / spectrum.spanHz + 0.5
+        let margin = spectrum.visibleSpan * 0.15
+        let low = spectrum.visibleCentre - spectrum.visibleSpan / 2 + margin
+        let high = spectrum.visibleCentre + spectrum.visibleSpan / 2 - margin
+        if fraction < low { setView(centre: spectrum.visibleCentre - (low - fraction), span: spectrum.visibleSpan) }
+        if fraction > high { setView(centre: spectrum.visibleCentre + (fraction - high), span: spectrum.visibleSpan) }
     }
 
     private var pinch: some Gesture {
