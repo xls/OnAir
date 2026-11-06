@@ -43,12 +43,12 @@ Last full sweep: 183 of 183 modes start and none crashes.
 | Ham | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW | Never transmitted on air. The WSPR and EME submodes stay on "listening": the test signal is FT8 only |
 | Broadcast | DAB+, DRM, AM and shortwave with audio. HD Radio locks and shows stations | No sound for HD Radio (HDC) or CDR (DRA+): those codecs are not available |
 | Trackers | ADS-B, AIS, APRS, UAT and Horus from the test signals | Real traffic |
-| Two-way | DMR, P25, NXDN, D-STAR, M17 and FreeDV with voice. Fusion, P25 Phase 2 and MPT 1327 from recordings | LTR and EDACS have no test input in the app |
+| Two-way | DMR, P25, NXDN, D-STAR, M17 and FreeDV with voice. Fusion, P25 Phase 2, MPT 1327, LTR and EDACS from recordings | Real systems |
 | Messaging | Meshtastic and POCSAG; transmit checked into IQ files | Never sent on air |
-| Navigation | DGPS and Loran-C from recordings | DME, DCF77 needs more than a minute to decode |
+| Navigation and maritime | DGPS, Loran-C and Marine VHF (channel 16 with sound) from recordings | DME has no test input. DCF77 was not run for the minute it needs |
 | Recordings | Record, replay with the mode restored, FM locked at 52 dB with sound | Import through the Files picker was not exercised by a test |
 
-SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. Marine VHF, HF ID, ASTERIX, Custom decoders and Add-ons have no test input. Other than the codecs named above, no mode needs a plug-in.
+SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. HF ID, ASTERIX, Custom decoders and Add-ons have no test input.
 
 ## Limits found while testing
 

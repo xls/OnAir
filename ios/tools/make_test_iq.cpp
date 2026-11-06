@@ -2,11 +2,14 @@
 // simulator's Documents/Recordings and play them with --iq <name>.sigmf-meta. Built by hand against the desktop's libdect2core.a, see PLAN.md.
 #include "dect2/dgps/dgps_rx.h"
 #include "dect2/eloran/eloran_gen.h"
+#include "dect2/edacs/edacs_gen.h"
 #include "dect2/engine/modes.h"
 #include "dect2/fusion/fusion_gen.h"
+#include "dect2/ltr/ltr_proto.h"
 #include "dect2/mpt1327/mpt1327_gen.h"
 #include "dect2/p25p2/p25p2_gen.h"
 #include "dect2/source/iq_file.h"
+#include <cmath>
 #include <complex>
 #include <cstdio>
 #include <string>
@@ -16,14 +19,14 @@ using IQ = std::vector<std::complex<float>>;
 
 static std::string gDir;
 
-static void save(const char* id, double rate, const IQ& iq) {
+static void save(const char* id, double rate, const IQ& iq, double centreMhz = 0) {
     const ModeTuning* t = modeTuningById(id);
     const std::string base = gDir + "/test-" + id;
     FILE* f = fopen((base + ".sigmf-data").c_str(), "wb");
     fwrite(iq.data(), sizeof(iq[0]), iq.size(), f);
     fclose(f);
     std::string err;
-    writeSigmfMeta(base + ".sigmf-meta", FileFormat::CF32, false, rate, (t ? t->defMhz : 100) * 1e6, 0, id, err);
+    writeSigmfMeta(base + ".sigmf-meta", FileFormat::CF32, false, rate, (centreMhz > 0 ? centreMhz : t ? t->defMhz : 100) * 1e6, 0, id, err);
     printf("%s: %.1f s at %.0f ksps, centre %.3f MHz %s\n", id, iq.size() / rate, rate / 1e3, (t ? t->defMhz : 100.0), err.c_str());
 }
 
@@ -85,6 +88,48 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 60; i++) bits.push_back(i & 1);
         }
         save("dgps", fs, dgps::modulate(bits, fs, 0, 0.5f, 1.0, 200));
+    }
+    {   // LTR: subaudible words under a voice tone, six radios in turn
+        const double fs = 480000;
+        std::vector<uint8_t> bits;
+        for (int i = 0; i < 40; i++) bits.push_back(i & 1);
+        const int words[6][5] = {{0, 3, 3, 17, 5}, {0, 5, 1, 101, 7}, {1, 12, 12, 254, 2}, {0, 0, 8, 255, 9}, {0, 7, 2, 33, 20}, {0, 19, 19, 200, 1}};
+        for (int r = 0; r < 20; r++) for (const auto& w : words) {
+            ltr::Word x;
+            x.area = w[0]; x.gotoCh = w[1]; x.home = w[2]; x.id = w[3]; x.freeCh = w[4];
+            x.chk = ltr::checksum(x);
+            const auto e = ltr::encodeWord(x);
+            bits.insert(bits.end(), e.begin(), e.end());
+            for (int i = 0; i < 12; i++) bits.push_back((i * 7 + r) & 1);
+        }
+        save("ltr", fs, ltr::modulate(bits, fs, 0, 600.0, 0.5f, 1000.0, 1500.0));
+    }
+    {   // EDACS: a control channel announcing group calls
+        EdacsGenConfig c;
+        c.rate = 480000;
+        c.centreHz = c.controlHz = 856000000;
+        c.durSec = 16;
+        for (int i = 0; i < 8; i++) c.lcnFreqHz.push_back(856000000 + i * 25000.0);
+        for (int i = 0; i < 4; i++) {
+            EdacsGenCall call;
+            call.lcn = 3 + i;
+            call.gid = 700 + i;
+            call.lid = 4321 + i;
+            call.startSec = 1 + i * 3.5;
+            call.endSec = call.startSec + 2.5;
+            c.calls.push_back(call);
+        }
+        save("edacs", c.rate, edacsSystemSignal(c));
+    }
+    {   // Marine VHF: a tone on channel 16, 156.800 MHz, 12.5 kHz below the centre
+        const double fs = 250000;
+        std::vector<float> audio((size_t)(fs * 2), 0.f);
+        for (size_t i = 0; i < (size_t)(fs * 12); i++) audio.push_back((float)(0.6 * std::sin(2 * M_PI * 1000 * i / fs)));
+        audio.insert(audio.end(), (size_t)(fs * 2), 0.f);
+        IQ iq = mpt1327::fmModulate(audio, fs, 3000, -12500);
+        for (size_t i = 0; i < (size_t)(fs * 2); i++) iq[i] = {0.0005f, 0};
+        for (size_t i = iq.size() - (size_t)(fs * 2); i < iq.size(); i++) iq[i] = {0.0005f, 0};
+        save("marinevhf", fs, iq, 156.8125);
     }
     {   // Loran-C: a chain of three stations
         loran::GenParams g;
