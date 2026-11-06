@@ -92,7 +92,7 @@ changes keep merging.
 
 Checked against the real radio at `192.168.10.9`, an ANTSDR E310 (reports as ANTSDR Rev.C; Zynq 7020, AD9361, firmware v0.39-1-g7bcc-dirty, iiod 0.26):
 
-- The app receives a real FM station through it on the simulator: TRIPLE M, 104.9 MHz, locked, stereo, 60 dB SNR.
+- The app receives a real FM station through it on the simulator (TRIPLE M, 104.9 MHz, locked, stereo, 60 dB SNR) and on the iPhone.
 - Samples are little-endian `S12/16`. `lpc` has four channels, voltage0 to voltage3, so a second RX path exists.
 - `frequency_available` is 70 to 6000 MHz. Sample rate is 2.083 to 30.72 Msps.
 - A test client on the Mac over Wi-Fi 6E received 9.7 Msps sustained with 256 Ki-sample buffers and 15.2 Msps with 1 Mi-sample buffers,
@@ -127,7 +127,7 @@ Each phase ends with something runnable.
 - **Done when:** the engine plays the synthetic FM signal through audio on a real iPhone.
 
 ### 2. Real radios
-- Pluto through libiio, reached from the test screen. Done on the simulator; phone pending.
+- Pluto through libiio, reached from the test screen. Works on the iPhone over Wi-Fi: a real FM station through the ANTSDR E310, heard on the phone.
 - Connect rtl_tcp to a real server over Wi-Fi.
 - **Done when:** FM from each radio plays on the phone for 30 minutes with no dropped-sample warnings.
 
