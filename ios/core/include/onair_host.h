@@ -139,6 +139,10 @@ bool onair_tx_start(const OnAirTxRequest* request, char* err, int errSize);
 void onair_tx_stop(void);
 const char* onair_tx_json(void);                                 // running, seconds, peak, failed, error
 
+// Broadcast: play a service from the Services table (DAB: its sub-channel, DRM: its index); the newest slideshow picture, RGBA, valid until the next call
+void onair_broadcast_select(int subchannel);
+bool onair_slide_latest(const unsigned char** rgba, int* width, int* height);
+
 // the active mode's decoded results: summary, cards and tables
 const char* onair_results_json(void);
 

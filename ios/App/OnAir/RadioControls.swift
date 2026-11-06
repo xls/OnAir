@@ -46,27 +46,29 @@ struct BandScale: View {
     let lowMhz: Double
     let highMhz: Double
     let stepMhz: Double
+    var pointsPerMhz = 34.0
+    var tickMhz = 0.2
+    var majorEvery = 5
     let tune: (Double) -> Void
-    private let pointsPerMhz = 34.0
     @State private var dragStart: Double?
     @State private var haptics = DetentHaptics()
 
     var body: some View {
         Canvas { context, size in
             let middle = size.width / 2
-            let firstTick = Int(((mhz - Double(size.width) / 2 / pointsPerMhz) * 5).rounded(.down))
-            let lastTick = Int(((mhz + Double(size.width) / 2 / pointsPerMhz) * 5).rounded(.up))
+            let firstTick = Int(((mhz - Double(size.width) / 2 / pointsPerMhz) / tickMhz).rounded(.down))
+            let lastTick = Int(((mhz + Double(size.width) / 2 / pointsPerMhz) / tickMhz).rounded(.up))
             for tick in firstTick...lastTick {
-                let value = Double(tick) / 5
+                let value = Double(tick) * tickMhz
                 guard value >= lowMhz, value <= highMhz else { continue }
                 let x = middle + (value - mhz) * pointsPerMhz
-                let major = tick % 5 == 0
+                let major = tick % majorEvery == 0
                 var line = Path()
                 line.move(to: CGPoint(x: x, y: size.height - 8))
                 line.addLine(to: CGPoint(x: x, y: size.height - (major ? 24 : 16)))
                 context.stroke(line, with: .color(RadioTheme.amber.opacity(major ? 0.95 : 0.45)), lineWidth: major ? 1.5 : 1)
                 if major {
-                    context.draw(Text(String(format: "%.0f", value)).font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(RadioTheme.amber),
+                    context.draw(Text(tickMhz * Double(majorEvery) >= 1 ? String(format: "%.0f", value) : String(format: "%.0f", value * 1000)).font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(RadioTheme.amber),
                                  at: CGPoint(x: x, y: 14))
                 }
             }

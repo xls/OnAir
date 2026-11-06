@@ -135,7 +135,7 @@ struct TVPage: View {
     @State private var renderer = VideoRenderer()
     @State private var state = TVState()
     @State private var section = TVSection.channels
-    private let tick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     private var playing: TVState.Service? { state.services.first { $0.id == state.selected } }
 
@@ -296,7 +296,7 @@ private struct GuideList: View {
     let title: String
     @State private var events: [Event] = []
     @State private var open: Int64?
-    private let tick = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     private func time(_ seconds: Int64) -> String {
         Date(timeIntervalSince1970: TimeInterval(seconds)).formatted(.dateTime.weekday(.abbreviated).hour().minute())
@@ -349,7 +349,7 @@ private struct TeletextView: View {
     @State private var links = [Int32](repeating: 0, count: 4)
     @State private var have = false
     @State private var typed = ""
-    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private static let palette: [Color] = [.black, .red, .green, .yellow, .blue, Color(red: 1, green: 0, blue: 1), .cyan, .white]
     private static let linkColours: [Color] = [.red, .green, .yellow, .cyan]
 
@@ -453,7 +453,7 @@ private struct ScanView: View {
     @State private var plan = ChannelPlan()
     @State private var index: Int?
     @State private var dwell = 0
-    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private static let dwellSeconds = 6
 
     private var found: [Found] { (try? JSONDecoder().decode([Found].self, from: Data(foundText.utf8))) ?? [] }

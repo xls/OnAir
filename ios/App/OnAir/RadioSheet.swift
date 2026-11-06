@@ -16,7 +16,7 @@ struct RadioSheet: View {
     @State private var busy = false
     @State private var problem = ""
     @Environment(\.dismiss) private var dismiss
-    private let poll = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
+    @State private var poll = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         NavigationStack {

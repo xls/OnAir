@@ -54,7 +54,7 @@ struct HamPage: View {
     @State private var general = General()
     @State private var results = DecodeTable()
     @State private var showTransmit = false
-    private let tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     private static let digital = ["FT8", "FT4", "WSPR", "JS8Call", "PSK31", "RTTY", "CW", "SSTV", "Olivia"]
 
     private var isVoice: Bool { receiver.status.mode == "General receiver" }
@@ -251,7 +251,7 @@ struct TransmitSheet: View {
     @State private var armed = false
     @State private var status = Status()
     @State private var problem = ""
-    private let tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
         PanelPage {

@@ -34,6 +34,7 @@ targets:
       - sdk: CoreGraphics.framework
       - sdk: CoreLocation.framework
       - sdk: ImageIO.framework
+      - sdk: MapKit.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
       - sdk: QuartzCore.framework

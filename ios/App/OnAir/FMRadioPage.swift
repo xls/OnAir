@@ -23,7 +23,7 @@ struct FMRadioPage: View {
     @State private var fm = FM()
     @State private var audioLevel = 0.0
     @AppStorage("fmMemories") private var memoriesText = ""
-    private let tick = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
 
     private var locked: Bool { receiver.status.running && fm.state == 2 }
     private var memories: [Double] {

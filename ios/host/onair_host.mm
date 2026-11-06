@@ -569,8 +569,29 @@ const char* onair_tx_json(void) {
 
 const char* onair_results_json(void) {
     App& a = appRunApp();
-    gJson = onair::resultsJson(a.rx, a.engine.running());
+    if (a.rx.standard == 3) { const dect2::DabEnsemble ens = a.engine.dabEnsemble(); gJson = onair::resultsJson(a.rx, a.engine.running(), &ens); }
+    else gJson = onair::resultsJson(a.rx, a.engine.running());
     return gJson.c_str();
+}
+
+void onair_broadcast_select(int subchannel) {
+    App& a = appRunApp();
+    if (a.rx.standard == 3 || a.dabMode) dabSelectStation(a, subchannel, true);
+    else a.engine.drm().selectService(subchannel);
+}
+
+bool onair_slide_latest(const unsigned char** rgba, int* width, int* height) {
+    App& a = appRunApp();
+    static uint64_t seq = 0;
+    static dect2::DabSlide held;
+    dect2::DabSlide s;
+    if (!a.engine.dabAudio().slide(s, seq) || s.w <= 0) return false;
+    seq = s.seq;
+    held = std::move(s);
+    *rgba = held.rgba.data();
+    *width = held.w;
+    *height = held.h;
+    return true;
 }
 
 const char* onair_settings_json(void) {

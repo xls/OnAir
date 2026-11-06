@@ -10,6 +10,14 @@ enum OnAirFamily {
 extension OnAirFamily {
     /// HF digital, CW, PSK, JS8Call and friends, and the general receiver for voice.
     static let hamFamilies: Set<Int> = [25, 34, 36, 37, 95, 113, 116, 119, 140, 205]
+    /// DAB, DRM, HD Radio, AM, AM stereo, CDR, shortwave
+    static let broadcast: Set<Int> = [2, 10, 21, 55, 107, 22, 212]
+    /// ADS-B, sondes, AIS, UAT, FLARM, drones, VDES, APRS
+    static let trackers: Set<Int> = [11, 13, 14, 83, 66, 56, 68, 63, 24]
+    /// DMR, NXDN, P25, dPMR, TETRA, TETRAPOL, trunking, D-STAR, M17, Fusion
+    static let twoWay: Set<Int> = [9, 38, 50, 180, 45, 46, 79, 127, 129, 130, 33, 31, 128]
+    /// LoRa mesh networks, pagers
+    static let messaging: Set<Int> = [20, 23, 75]
 
     static func isHam(family: Int, mode: String) -> Bool { hamFamilies.contains(family) || mode == "General receiver" }
 }
@@ -39,7 +47,8 @@ struct RootView: View {
     @State private var tab = Tab.device
     @State private var devicePage = DevicePage.source
     @State private var started = false
-    private let tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+    @State private var autoSelected = false
+    @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -101,6 +110,14 @@ struct RootView: View {
                 TVPage(receiver: receiver)
             } else if OnAirFamily.isHam(family: receiver.status.family, mode: receiver.status.mode) {
                 HamPage(receiver: receiver, spectrum: spectrum)
+            } else if OnAirFamily.broadcast.contains(receiver.status.family) {
+                BroadcastPage(receiver: receiver)
+            } else if OnAirFamily.trackers.contains(receiver.status.family) {
+                TrackerPage(receiver: receiver)
+            } else if OnAirFamily.twoWay.contains(receiver.status.family) {
+                TwoWayPage(receiver: receiver)
+            } else if OnAirFamily.messaging.contains(receiver.status.family) {
+                TexterPage(receiver: receiver)
             } else {
                 ModeResultsPage(receiver: receiver)
             }
@@ -128,6 +145,10 @@ struct RootView: View {
                 MainActor.assumeIsolated {
                     NSLog("OnAirVerify%@", String(cString: onair_verify_line()))
                     if onair_tv_first_service() >= 0 { onair_tv_play(onair_tv_first_service()) }
+                    if !autoSelected, let table = Results.current()?.table("Services"), let first = table.rows.first(where: { !table.value($0, "Subch").isEmpty }) {
+                        autoSelected = true
+                        onair_broadcast_select(Int32(table.value(first, "Subch")) ?? -1)
+                    }
                 }
             }
         }

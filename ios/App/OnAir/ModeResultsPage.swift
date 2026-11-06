@@ -17,7 +17,7 @@ struct ModeResultsPage: View {
 
     let receiver: Receiver
     @State private var results = Results()
-    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         List {
