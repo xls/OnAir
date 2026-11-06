@@ -185,6 +185,13 @@ void autodetTick(App& a) {
     else if (!a.engine.running()) s.phase = PhaseOff;   // stopped by the user
 }
 
+std::string autodetMessage(App& a) {
+    auto it = gState.find(&a);
+    if (it == gState.end() || it->second.phase == PhaseOff) return "";
+    const AutoState& s = it->second;
+    return s.phase == PhaseCapture && s.msgLevel == 0 ? a.engine.autodet().status() : s.msg;
+}
+
 // one line above the mode's own status: what was found, or what it is doing, and for voice a button per signal found
 void autodetStatus(App& a) {
     auto it = gState.find(&a);

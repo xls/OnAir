@@ -1163,6 +1163,7 @@ void autodetSelect(App& a, int kind);            // what a click on the row does
 void autodetCancel(App& a);                      // another mode was picked
 void autodetTick(App& a);                        // every frame
 void autodetStatus(App& a);                      // its line at the top of the status bar
+std::string autodetMessage(App& a);              // the same line as text, empty when off
 void marineVhfJump(App& a, int channel, char suffix = 0);   // marinevhf_ui.cpp: open the Marine VHF mode on this channel (the DSC screen names one in a call)
 bool modeSelected(const App& a, const ModeDef& m);    // the row of the current mode
 const char* modeSearchBox();                          // a search box at the top of a mode drop-down (mode_select.cpp); returns the query

@@ -156,6 +156,8 @@ void pageBody(App& a, ImVec2) {
 }
 }   // namespace
 
+static std::string gNetPassword;
+
 extern "C" {
 
 bool onair_start(void* layer, const char*) {
@@ -179,6 +181,7 @@ bool onair_start(void* layer, const char*) {
     static char name[] = "OnAir";
     static char* argv[] = {name, nullptr};
     if (!appRunInit(1, argv)) return false;
+    appRunApp().tune.synth.dvbt = true;   // the T2 test signal has no programme; the DVB-T one carries a picture and sound
     ImGuiPlatformIO& pio = ImGui::GetPlatformIO();
     pio.Platform_SetClipboardTextFn = [](ImGuiContext*, const char* text) { UIPasteboard.generalPasteboard.string = @(text); };
     pio.Platform_GetClipboardTextFn = [](ImGuiContext*) -> const char* {
@@ -262,6 +265,8 @@ void onair_touch(int id, float x, float y, int phase) {
     }
 }
 
+void onair_net_password(const char* password) { gNetPassword = password; }
+
 void onair_net_connect(int type, const char* host, int port) {
     App& a = appRunApp();
     if (a.netAddProbe) return;
@@ -274,6 +279,7 @@ void onair_net_connect(int type, const char* host, int port) {
     pr->radio.type = (dect2::NetRadio::Type)type;
     pr->radio.host = host;
     pr->radio.port = port;
+    if (type == dect2::NetRadio::KiwiSdr) pr->radio.remote = gNetPassword;
     a.netAddProbe = pr;
     dect2::namedThread("onair-rigprobe", [pr] { std::string e; pr->ok = dect2::probeNetRadio(pr->radio, 3000, e); pr->err = e; pr->done = true; }).detach();
 }
@@ -430,6 +436,12 @@ void onair_tv_play_file(const char* path) {
             std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
         }
     }).detach();
+}
+
+const char* onair_auto_message(void) {
+    static std::string held;
+    held = autodetMessage(appRunApp());
+    return held.c_str();
 }
 
 int onair_tv_first_service(void) {

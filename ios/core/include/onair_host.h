@@ -45,6 +45,7 @@ int onair_keyboard_kind(void);                                   // 0 text, 1 de
 
 // network radios, by NetRadio::Type. Tests the connection on a worker, then saves and selects the radio, as the
 // desktop's Network radios window does. Stops the receiver first, because a radio is only picked while stopped.
+void onair_net_password(const char* password);                     // a KiwiSDR's, used by the next onair_net_connect
 void onair_net_connect(int type, const char* host, int port);
 bool onair_net_busy(void);
 const char* onair_net_error(void);                               // "" when the last attempt worked
@@ -107,6 +108,11 @@ bool onair_video_latest(OnAirVideoFrame* frame);
 const char* onair_tv_json(void);
 void onair_tv_play(int serviceId);                               // -1 stops
 int onair_tv_first_service(void);                                // for testing: a service to play, -1 when none or one is playing
+void onair_iptv_open(const char* address);                        // a stream or an M3U playlist from the network
+void onair_iptv_play(int index);
+void onair_iptv_stop(void);
+const char* onair_iptv_json(void);
+const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs
 void onair_tv_play_file(const char* path);                        // a recorded .ts through the demux and the player, at its own pace
 void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic
 const char* onair_epg_json(int serviceId);

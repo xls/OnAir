@@ -137,7 +137,10 @@ struct TVPage: View {
     @State private var section = TVSection.channels
     @State private var tick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
+    @State private var autoMessage = ""
+
     private var playing: TVState.Service? { state.services.first { $0.id == state.selected } }
+    private var isInternet: Bool { receiver.status.family == OnAirFamily.internetTV }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -160,16 +163,28 @@ struct TVPage: View {
             .aspectRatio(receiver.videoFullscreen ? nil : 16.0 / 9, contentMode: .fit)
             .frame(maxWidth: .infinity, maxHeight: receiver.videoFullscreen ? .infinity : nil)
             if !receiver.videoFullscreen {
-                sectionBar
-                Group {
-                    switch section {
-                    case .channels: ChannelList(state: state)
-                    case .guide: GuideList(serviceId: state.selected, title: playing?.name ?? "")
-                    case .teletext: TeletextView()
-                    case .scan: ScanView(receiver: receiver, state: state)
+                if isInternet {
+                    InternetTVPanel().frame(maxHeight: .infinity)
+                } else {
+                    if !autoMessage.isEmpty {
+                        Label(autoMessage, systemImage: "waveform.badge.magnifyingglass")
+                            .font(.footnote)
+                            .foregroundStyle(TV.accent)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.top, 8)
                     }
+                    sectionBar
+                    Group {
+                        switch section {
+                        case .channels: ChannelList(state: state)
+                        case .guide: GuideList(serviceId: state.selected, title: playing?.name ?? "")
+                        case .teletext: TeletextView()
+                        case .scan: ScanView(receiver: receiver, state: state)
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(maxHeight: .infinity)
             }
         }
         .background(receiver.videoFullscreen ? Color.black.ignoresSafeArea() : TV.background.ignoresSafeArea())
@@ -206,7 +221,7 @@ struct TVPage: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 .padding(8)
             }
-        } else {
+        } else if !isInternet {
             VStack(spacing: 6) {
                 Image(systemName: "tv").font(.largeTitle)
                 Text(receiver.status.running ? (state.services.isEmpty ? "Searching for channels…" : "Choose a channel") : "Press power to start")
@@ -238,6 +253,120 @@ struct TVPage: View {
 
     private func load() {
         if let new = tvDecode(TVState.self, onair_tv_json()) { state = new }
+        autoMessage = String(cString: onair_auto_message())
+    }
+}
+
+/// Internet TV has no radio to tune: an address, then the channels of a playlist.
+private struct InternetTVPanel: View {
+    private struct State: Decodable {
+        struct Channel: Decodable, Identifiable {
+            let id: Int
+            let name, group: String
+            let drm: Bool
+        }
+        var busy = false
+        var state = "", kind = "", message = "", playing = ""
+        var mbps = 0.0, buffered = 0.0
+        var channels: [Channel] = []
+    }
+
+    @AppStorage("iptvAddress") private var address = ""
+    @SwiftUI.State private var state = State()
+    @SwiftUI.State private var search = ""
+    @SwiftUI.State private var tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @FocusState private var typing: Bool
+
+    private var shown: [State.Channel] {
+        search.isEmpty ? state.channels : state.channels.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.group.localizedCaseInsensitiveContains(search) }
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                TextField("Stream or playlist address", text: $address)
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused($typing)
+                    .submitLabel(.go)
+                    .onSubmit(open)
+                    .padding(10)
+                    .background(TV.card, in: RoundedRectangle(cornerRadius: 10))
+                Button(action: open) {
+                    Image(systemName: state.busy ? "hourglass" : "play.fill").frame(width: 44, height: 44)
+                }
+                .disabled(address.isEmpty || state.busy)
+                .background(TV.card, in: RoundedRectangle(cornerRadius: 10))
+                if !state.playing.isEmpty {
+                    Button {
+                        onair_iptv_stop()
+                    } label: {
+                        Image(systemName: "stop.fill").frame(width: 44, height: 44)
+                    }
+                    .background(TV.card, in: RoundedRectangle(cornerRadius: 10))
+                }
+            }
+            if !state.playing.isEmpty || !state.message.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !state.playing.isEmpty {
+                        Text(state.playing).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text([state.kind, state.state, state.mbps > 0 ? String(format: "%.1f Mbit/s", state.mbps) : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !state.message.isEmpty { Text(state.message).font(.caption).foregroundStyle(.orange) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if state.channels.count > 8 {
+                TextField("Search channels", text: $search)
+                    .textInputAutocapitalization(.never)
+                    .padding(10)
+                    .background(TV.card, in: RoundedRectangle(cornerRadius: 10))
+            }
+            ScrollView {
+                LazyVStack(spacing: 6) {
+                    ForEach(shown) { channel in
+                        Button {
+                            onair_iptv_play(Int32(channel.id))
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(channel.name).foregroundStyle(.white)
+                                    if !channel.group.isEmpty { Text(channel.group).font(.caption).foregroundStyle(.secondary) }
+                                }
+                                Spacer()
+                                if channel.drm { Image(systemName: "lock.fill").foregroundStyle(.secondary) }
+                                if channel.name == state.playing { Image(systemName: "speaker.wave.2.fill").foregroundStyle(TV.accent) }
+                            }
+                            .padding(12)
+                            .background(TV.card, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    if state.channels.isEmpty && state.playing.isEmpty {
+                        Text("OnAir ships no channels. Enter the address of an HLS, HTTP, UDP or RTP stream, or an M3U playlist.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 20)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .onAppear(perform: load)
+        .onReceive(tick) { _ in load() }
+    }
+
+    private func open() {
+        typing = false
+        onair_iptv_open(address)
+    }
+
+    private func load() {
+        if let new = tvDecode(State.self, onair_iptv_json()) { state = new }
     }
 }
 

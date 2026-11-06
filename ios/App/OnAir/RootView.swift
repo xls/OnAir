@@ -4,7 +4,8 @@ import SwiftUI
 enum OnAirFamily {
     static let fm = 5
     /// DVB-T/T2, ATSC, ATSC 3.0, ISDB-T, DVB-S/S2, DTMB, DVB-C
-    static let television: Set<Int> = [0, 1, 3, 4, 6, 7, 40]
+    static let television: Set<Int> = [0, 1, 3, 4, 6, 7, 40, internetTV]
+    static let internetTV = 209
 }
 
 extension OnAirFamily {
@@ -147,6 +148,7 @@ struct RootView: View {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
+        if let source = value("--source") { onair_source_select_named(source) }  // first: the automatic modes start listening when selected
         if let mode = value("--mode") { _ = onair_mode_select_named(mode) }
         var label = value("--mode") ?? ""
         if let index = value("--mode-index").flatMap(Int32.init), index < onair_mode_count() {
@@ -154,17 +156,21 @@ struct RootView: View {
             label = String(cString: onair_mode_name(index))
             NSLog("OnAirVerify index %d of %d is %@ family %d group %@", index, onair_mode_count(), label, onair_mode_family(index), String(cString: onair_mode_group(index)))
         }
-        if let source = value("--source") { onair_source_select_named(source) }
         if let bandwidth = value("--bw"), let mhz = Double(bandwidth) { onair_tv_bandwidth(mhz) }
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
-        if args.contains("--start") { receiver.startStop() }
+        if args.contains("--start") && !onair_running() { receiver.startStop() }  // the automatic modes start themselves
+        if let address = value("--iptv") { onair_iptv_open(address) }
+        if let channel = value("--iptv-channel").flatMap(Int32.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { onair_iptv_play(channel) }
+        }
         if let file = value("--ts") { onair_tv_play_file(file) }
         if let path = value("--tx-file") { transmitToFile(path, mode: value("--mode") ?? "") }
         if !label.isEmpty {
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
                 MainActor.assumeIsolated {
                     NSLog("OnAirVerify%@", String(cString: onair_verify_line()))
+                    NSLog("OnAirVerify auto %@ iptv %@", String(cString: onair_auto_message()), String(cString: onair_iptv_json()))
                     if let shown = Results.current() {
                         NSLog("OnAirVerify shown cards=%d tables=%d rows=%d summary=%@", shown.cards?.count ?? 0, shown.tables?.count ?? 0, shown.tables?.reduce(0) { $0 + $1.rows.count } ?? 0, shown.summary ?? "")
                     } else {

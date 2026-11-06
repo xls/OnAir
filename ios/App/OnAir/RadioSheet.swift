@@ -55,6 +55,7 @@ struct RadioSheet: View {
     @AppStorage("radioKind") private var kind = Kind.pluto
     @AppStorage("radioHost") private var host = "192.168.10.9"
     @AppStorage("radioPort") private var port = "0"
+    @State private var password = ""
     @State private var busy = false
     @State private var problem = ""
     @Environment(\.dismiss) private var dismiss
@@ -96,6 +97,22 @@ struct RadioSheet: View {
                     }
                 }
             }
+            if kind == .kiwi {
+                PanelSection(title: "Access") {
+                    PanelRow(label: "Password", help: "Leave empty for a public receiver.") {
+                        GlassWindow(corner: 4) {
+                            SecureField("", text: $password)
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundStyle(RadioTheme.amber)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .multilineTextAlignment(.trailing)
+                                .padding(8)
+                                .frame(width: 170)
+                        }
+                    }
+                }
+            }
             if !problem.isEmpty {
                 Text(problem).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -114,6 +131,7 @@ struct RadioSheet: View {
         guard !busy, !host.isEmpty else { return }
         problem = ""
         busy = true
+        onair_net_password(password)
         onair_net_connect(Int32(kind.rawValue), host, Int32(port) ?? 0)
     }
 
