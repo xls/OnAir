@@ -29,6 +29,27 @@ bottom bar, the page chips and native sheets.
 +----------------------------------+
 ```
 
+## Status
+
+What was measured, on the simulator unless it says the iPhone. `tools/verify_mode.sh` runs a mode against OnAir's built-in test signal and prints what the decoder produced.
+
+| Screen | Measured | Not yet done |
+|---|---|---|
+| FM | Real stations through the E310 on the iPhone | Long listening test |
+| Spectrum and scopes | 60 fps on the iPhone | |
+| TV | H.264 720p and MPEG-2 576p with audio, through hardware decoding from a stream file | Real over-the-air channel; no channel found so far |
+| Ham | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW | Never transmitted on air; microphone voice TX |
+| Broadcast | DAB+ with audio, DRM with audio, AM, shortwave. HD Radio locks and shows stations | HD Radio sound needs the HDC codec |
+| Trackers | ADS-B 12 aircraft, AIS 19 ships, APRS 10 stations from the test signal | Real traffic. Maps centre on the phone's location |
+| Two-way | DMR, P25, NXDN and D-STAR calls and IDs from the test signal | Voice needs mbelib |
+| Messaging | Meshtastic 5 nodes with messages, POCSAG 28 pages; transmit checked into IQ files | Never sent on air |
+
+Voice and sound codecs are patented or of unclear status, so OnAir ships none of them: mbelib for DMR, P25, NXDN, dPMR and D-STAR voice, HDC for HD
+Radio, DRA+ for CDR. On iOS they cannot be installed at run time and would have to be linked in at build time, through the same hook as libiio.
+codec2 is open (FreeDV, M17) and is not linked yet.
+
+Other modes use the generic results screen. Background decoding stops updating while the screen is off, though audio should continue.
+
 ## Direction: native first
 
 The app is a custom native iOS app on OnAir's engine. `core/` and `rust/` stay unchanged and keep merging from upstream. The interface moves to

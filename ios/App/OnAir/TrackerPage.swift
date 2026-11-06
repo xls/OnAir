@@ -36,6 +36,29 @@ private struct Target: Identifiable, Equatable {
     }
 }
 
+/// Where the phone is, asked for once when a map opens.
+@Observable final class StationLocation: NSObject, CLLocationManagerDelegate {
+    private(set) var coordinate: CLLocationCoordinate2D?
+    private let manager = CLLocationManager()
+
+    func start() {
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+        manager.requestWhenInUseAuthorization()
+        manager.requestLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        coordinate = locations.last?.coordinate
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways { manager.requestLocation() }
+    }
+}
+
 /// Anything with a position, on a live map.
 struct TrackerPage: View {
     let receiver: Receiver
@@ -43,7 +66,7 @@ struct TrackerPage: View {
     @State private var targets: [Target] = []
     @State private var selected: String?
     @State private var camera = MapCameraPosition.automatic
-    @State private var followed = false
+    @State private var location = StationLocation()
     @State private var tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var located: [Target] { targets.filter { $0.coordinate != nil } }
@@ -80,8 +103,18 @@ struct TrackerPage: View {
             list.frame(maxHeight: 250)
         }
         .preferredColorScheme(.dark)
-        .onAppear(perform: load)
+        .onAppear {
+            location.start()
+            load()
+        }
+        .onChange(of: location.coordinate?.latitude) { centreOnStation() }
         .onReceive(tick) { _ in load() }
+    }
+
+    /// Starts around you: an aircraft receiver hears a few hundred kilometres.
+    private func centreOnStation() {
+        guard let here = location.coordinate else { return }
+        camera = .region(MKCoordinateRegion(center: here, latitudinalMeters: 600_000, longitudinalMeters: 600_000))
     }
 
     private var header: some View {
@@ -90,9 +123,9 @@ struct TrackerPage: View {
                 .font(.footnote.weight(.medium))
             Spacer()
             Button {
-                camera = .automatic
+                if location.coordinate != nil { centreOnStation() } else { camera = .automatic }
             } label: {
-                Image(systemName: "scope")
+                Image(systemName: "location.fill")
             }
         }
         .padding(.horizontal, 12)

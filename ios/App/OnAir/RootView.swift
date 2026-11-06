@@ -136,6 +136,7 @@ struct RootView: View {
         if let mode = value("--mode") { _ = onair_mode_select_named(mode) }
         if let source = value("--source") { onair_source_select_named(source) }
         if let bandwidth = value("--bw"), let mhz = Double(bandwidth) { onair_tv_bandwidth(mhz) }
+        if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--start") { receiver.startStop() }
         if let file = value("--ts") { onair_tv_play_file(file) }

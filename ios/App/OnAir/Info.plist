@@ -18,6 +18,8 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>OnAir centres its maps on where you are.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

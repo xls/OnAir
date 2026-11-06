@@ -20,6 +20,7 @@ targets:
       path: App/OnAir/Info.plist
       properties:
         UIBackgroundModes: [audio]
+        NSLocationWhenInUseUsageDescription: OnAir centres its maps on where you are.
     dependencies:
       - framework: build/OnAirCore.xcframework
         embed: false
