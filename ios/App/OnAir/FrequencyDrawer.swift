@@ -38,6 +38,8 @@ struct FrequencyDrawer: View {
     @Environment(\.dismiss) private var dismiss
     @State private var plan = ChannelPlan()
     @State private var typed = ""
+    @AppStorage("frequencyUnit") private var unit = "MHz"
+    private static let units: [(name: String, mhz: Double)] = [("kHz", 0.001), ("MHz", 1), ("GHz", 1000)]
     @State private var query = ""
 
     private var channels: [ChannelPlan.Channel] {
@@ -52,7 +54,7 @@ struct FrequencyDrawer: View {
         PanelPage {
             HStack(spacing: 8) {
                 GlassWindow(corner: 6) {
-                    TextField("", text: $typed, prompt: Text("FREQUENCY MHz").foregroundStyle(RadioTheme.amber.opacity(0.4)))
+                    TextField("", text: $typed, prompt: Text("FREQUENCY \(unit)").foregroundStyle(RadioTheme.amber.opacity(0.4)))
                         .font(.system(size: 20, weight: .medium, design: .monospaced))
                         .foregroundStyle(RadioTheme.amber)
                         .keyboardType(.decimalPad)
@@ -62,6 +64,14 @@ struct FrequencyDrawer: View {
                     EngravedLabel(text: "TUNE", size: 9)
                 }
                 .frame(width: 76, height: 52)
+            }
+            HStack(spacing: 6) {
+                ForEach(Self.units, id: \.name) { item in
+                    HardwareKey(lit: unit == item.name, led: RadioTheme.amber, action: { unit = item.name }) {
+                        EngravedLabel(text: item.name, size: 9)
+                    }
+                    .frame(height: 38)
+                }
             }
             if plan.channels.count + plan.known.count > 12 {
                 GlassWindow(corner: 6) {
@@ -125,8 +135,8 @@ struct FrequencyDrawer: View {
     }
 
     private func tuneTyped() {
-        guard let mhz = Double(typed.replacingOccurrences(of: ",", with: ".")) else { return }
-        receiver.tune(mhz: mhz)
+        guard let value = Double(typed.replacingOccurrences(of: ",", with: ".")) else { return }
+        receiver.tune(mhz: value * (Self.units.first { $0.name == unit }?.mhz ?? 1))
         finish()
     }
 

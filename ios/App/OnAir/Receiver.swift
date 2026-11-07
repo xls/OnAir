@@ -47,6 +47,11 @@ final class Receiver {
     }
 
     func startStop() { onair_start_stop(); refresh() }
+    /// Below 1 MHz a frequency reads better in kHz.
+    static func frequencyText(mhz: Double) -> String {
+        mhz < 1 ? String(format: "%.3f kHz", mhz * 1000) : String(format: "%.3f MHz", mhz)
+    }
+
     func canReach(mhz: Double) -> Bool {
         let hz = mhz * 1e6
         return hz >= rate.minHz && (rate.maxHz == 0 || hz <= rate.maxHz)

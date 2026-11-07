@@ -191,6 +191,7 @@ struct RootView: View {
                 try? text.write(to: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("radio.txt"), atomically: true, encoding: .utf8)
             }
         }
+        if args.contains("--open-tuner") { NotificationCenter.default.post(name: .init("openTuner"), object: nil) }
         if let lo = value("--oscillator").flatMap(Double.init) { onair_antenna_converter_lo("rx1", lo) }
         if let antenna = value("--upconverter") { onair_antenna_converter_set(antenna, true) }
         if let antenna = value("--no-upconverter") { onair_antenna_converter_set(antenna, false) }
@@ -386,7 +387,7 @@ struct StatusStrip: View {
                         Button {
                             showDrawer = true
                         } label: {
-                            Text(isStream ? "INTERNET" : String(format: "%.3f MHz", receiver.status.mhz))
+                            Text(isStream ? "INTERNET" : Receiver.frequencyText(mhz: receiver.status.mhz))
                                 .font(.system(size: 19, weight: .medium, design: .monospaced))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
@@ -427,6 +428,7 @@ struct StatusStrip: View {
         .sheet(isPresented: $showDrawer) {
             FrequencyDrawer(receiver: receiver)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("openTuner"))) { _ in showDrawer = true }
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--open-modes") else { return }
             try? await Task.sleep(for: .seconds(2))
