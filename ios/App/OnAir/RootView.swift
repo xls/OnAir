@@ -87,6 +87,7 @@ struct RootView: View {
                 BottomBar(tab: $tab, modeName: receiver.status.mode)
             }
         }
+        .ignoresSafeArea(edges: receiver.videoFullscreen ? .all : [])
         .background(BrushedMetal(tone: 0.46).ignoresSafeArea())
         .statusBarHidden(receiver.videoFullscreen)
         .persistentSystemOverlays(receiver.videoFullscreen ? .hidden : .automatic)

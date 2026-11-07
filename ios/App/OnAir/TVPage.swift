@@ -64,6 +64,7 @@ final class VideoRenderer: NSObject, MTKViewDelegate {
     private var uniforms = Uniforms(scale: .one, bt709: 1, fullRange: 0)
     private var pictureAspect = 16.0 / 9
     private var usingRgba = false
+    var zoomed = false   // fills the view and crops the edges, instead of showing the whole picture
 
     override init() {
         queue = device.makeCommandQueue()!
@@ -112,7 +113,8 @@ final class VideoRenderer: NSObject, MTKViewDelegate {
         guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable, let commands = queue.makeCommandBuffer(),
               let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
         let viewAspect = view.drawableSize.width / max(view.drawableSize.height, 1)
-        uniforms.scale = pictureAspect > viewAspect ? SIMD2(1, Float(viewAspect / pictureAspect)) : SIMD2(Float(pictureAspect / viewAspect), 1)
+        let fit = pictureAspect > viewAspect ? SIMD2<Float>(1, Float(viewAspect / pictureAspect)) : SIMD2<Float>(Float(pictureAspect / viewAspect), 1)
+        uniforms.scale = zoomed ? fit / min(fit.x, fit.y) : fit
         if usingRgba ? picture != nil : luma != nil {
             encoder.setRenderPipelineState(usingRgba ? rgba : nv12)
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
@@ -156,30 +158,69 @@ struct TVPage: View {
     @State private var tick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     @State private var autoMessage = ""
+    @AppStorage("tvZoomed") private var zoomed = false
+    @State private var controlsShown = true
+    @State private var hideTimer: DispatchWorkItem?
 
     private var playing: TVState.Service? { state.services.first { $0.id == state.selected } }
     private var isInternet: Bool { receiver.status.family == OnAirFamily.internetTV }
 
     var body: some View {
+        GeometryReader { geometry in page(geometry) }
+            .ignoresSafeArea(edges: receiver.videoFullscreen ? .all : [])
+    }
+
+    private func page(_ geometry: GeometryProxy) -> some View {
         VStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
                 VideoView(renderer: renderer)
                 overlay
             }
             .overlay(alignment: .topTrailing) {
-                Button {
-                    setFullscreen(!receiver.videoFullscreen, rotate: true)
-                } label: {
-                    Image(systemName: receiver.videoFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial, in: Circle())
+                HStack(spacing: 10) {
+                    if receiver.videoFullscreen {
+                        Button { zoomed.toggle(); showControls() } label: {
+                            Text(zoomed ? "FIT" : "ZOOM")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 64, height: 44)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                        .accessibilityLabel(zoomed ? "Show the whole picture" : "Fill the screen")
+                    }
+                    Button {
+                        setFullscreen(!receiver.videoFullscreen, rotate: true)
+                    } label: {
+                        Image(systemName: receiver.videoFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
                 }
                 .padding(10)
+                .opacity(controlsShown ? 1 : 0)
+                .allowsHitTesting(controlsShown)
             }
-            .aspectRatio(receiver.videoFullscreen ? nil : 16.0 / 9, contentMode: .fit)
-            .frame(maxWidth: .infinity, maxHeight: receiver.videoFullscreen ? .infinity : nil)
+            .overlay(alignment: .topLeading) {
+                if receiver.videoFullscreen, controlsShown, let name = playing?.name {
+                    Text(name)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .frame(height: 44)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(10)
+                        .transition(.opacity)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { if receiver.videoFullscreen { zoomed.toggle(); showControls() } }
+            .onTapGesture { if controlsShown && receiver.videoFullscreen { hideControls() } else { showControls() } }
+            .gesture(MagnificationGesture().onEnded { scale in
+                if receiver.videoFullscreen { zoomed = scale > 1 }
+            })
+            .frame(height: receiver.videoFullscreen ? geometry.size.height : geometry.size.width * 9 / 16)
             if !receiver.videoFullscreen {
                 if isInternet {
                     InternetTVPanel().frame(maxHeight: .infinity)
@@ -208,7 +249,15 @@ struct TVPage: View {
         .background(receiver.videoFullscreen ? Color.black.ignoresSafeArea() : TV.background.ignoresSafeArea())
         .ignoresSafeArea(edges: receiver.videoFullscreen ? .all : [])
         .preferredColorScheme(.dark)
-        .onAppear(perform: load)
+        .onAppear {
+            load()
+            if ProcessInfo.processInfo.arguments.contains("--tv-full") { DispatchQueue.main.asyncAfter(deadline: .now() + 3) { setFullscreen(true, rotate: true) } }
+        }
+        .onChange(of: zoomed) { renderer.zoomed = zoomed && receiver.videoFullscreen }
+        .onChange(of: receiver.videoFullscreen) {
+            renderer.zoomed = zoomed && receiver.videoFullscreen
+            showControls()
+        }
         .onDisappear { setFullscreen(false, rotate: true) }
         .onReceive(tick) { _ in load() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
@@ -217,6 +266,21 @@ struct TVPage: View {
             if orientation.isLandscape && state.selected >= 0 { setFullscreen(true, rotate: false) }
             if orientation == .portrait { setFullscreen(false, rotate: false) }
         }
+    }
+
+    /// As in any video player: in full screen the controls come with a tap and go by themselves. Upright they stay.
+    private func showControls() {
+        withAnimation(.easeOut(duration: 0.15)) { controlsShown = true }
+        hideTimer?.cancel()
+        guard receiver.videoFullscreen else { return }
+        let hide = DispatchWorkItem { hideControls() }
+        hideTimer = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: hide)
+    }
+
+    private func hideControls() {
+        hideTimer?.cancel()
+        withAnimation(.easeOut(duration: 0.3)) { controlsShown = false }
     }
 
     private func setFullscreen(_ on: Bool, rotate: Bool) {
