@@ -74,7 +74,7 @@ struct RootView: View {
             ZStack {
                 OnAirView().opacity(0).allowsHitTesting(false)
                 Color.black
-                if !receiver.pageHidden { nativePage }
+                nativePage
                 if started && tab != .device && tab != .settings && !receiver.videoFullscreen {
                     DrawerHandle { showOptions = true }
                 }
@@ -388,8 +388,8 @@ struct StatusStrip: View {
                 showModes = false
                 onPickMode()
             }
-            .onAppear { receiver.pageHidden = true }
-            .onDisappear { receiver.pageHidden = false }
+            .onAppear { UIFreeze.shared.on = true }
+            .onDisappear { UIFreeze.shared.on = false }
         }
     }
 }

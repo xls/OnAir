@@ -114,7 +114,7 @@ struct BandScale: View {
         motion.deviceMotionUpdateInterval = 1.0 / 30
         motion.startDeviceMotionUpdates(to: .main) { [weak self] data, _ in
             MainActor.assumeIsolated {
-            guard let self, let gravity = data?.gravity else { return }
+            guard let self, let gravity = data?.gravity, !UIFreeze.shared.on else { return }
             self.offset = CGPoint(x: min(max(gravity.x, -1), 1), y: min(max(gravity.y + 0.6, -1), 1))
             }
         }

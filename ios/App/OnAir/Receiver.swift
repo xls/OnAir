@@ -30,7 +30,6 @@ final class Receiver {
     private(set) var filterBand: ClosedRange<Double>?
     private(set) var devices: [String] = []
     var videoFullscreen = false
-    var pageHidden = false   // a full-height sheet covers the page: it stops drawing, so the sheet scrolls smoothly. Sound and decoding go on
 
     func refresh() {
         guard let text = onair_status_json() else { return }
@@ -47,4 +46,11 @@ final class Receiver {
     func setRate(hz: Double) { onair_rate_set(hz); refresh() }
     func tune(mhz: Double) { onair_tune_mhz(mhz); refresh() }
     func setMuted(_ muted: Bool) { onair_set_volume(status.volume, muted); refresh() }
+}
+
+/// While a full-height sheet covers the page, the page holds its last picture instead of drawing, so the sheet scrolls smoothly and the page is
+/// there at once when the sheet goes. Sound and decoding carry on.
+@MainActor @Observable final class UIFreeze {
+    static let shared = UIFreeze()
+    var on = false
 }

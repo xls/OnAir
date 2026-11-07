@@ -118,6 +118,7 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
+        if UIFreeze.shared.on { return }   // the last frame stays on the screen
         guard onair_is_started() else { return }
         takeLine()
         frames += 1

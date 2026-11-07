@@ -62,9 +62,8 @@ unsigned gEditId = 0;
 std::string gEditValue, gSection, gLastText;
 std::vector<Item> gItems;
 std::set<unsigned> gSeen;
-Item* gCombo = nullptr;
+int gCombo = -1;   // an index: a panel may add more items inside an open combo, which moves the list
 int gOption = 0;
-bool gOptionHit = false;
 bool gInTooltip = false;
 
 std::string visible(const char* label) {   // the part of a label ImGui shows
@@ -123,7 +122,7 @@ static std::string shortHelp(const std::string& help) {   // a name for a contro
 }
 
 namespace reflect {
-void begin() { gOn = true; gItems.clear(); gSeen.clear(); gSection.clear(); gLastText.clear(); gCombo = nullptr; }
+void begin() { gOn = true; gItems.clear(); gSeen.clear(); gSection.clear(); gLastText.clear(); gCombo = -1; }
 void section(const char* title) { gSection = title; }
 void edit(unsigned id, const std::string& value) { gEditId = id; gEditValue = value; gHasEdit = true; }
 bool editPending() { return gHasEdit; }
@@ -156,18 +155,19 @@ bool Checkbox(const char* label, bool* v) {
 
 bool BeginCombo(const char* label, const char* preview, ImGuiComboFlags flags) {
     if (!gOn) return Orig_BeginCombo(label, preview, flags);
-    gCombo = add("choice", label);
+    Item* item = add("choice", label);
+    if (!item) return false;
+    item->value = "-1";
+    gCombo = (int)gItems.size() - 1;
     gOption = 0;
-    gOptionHit = false;
-    if (gCombo) gCombo->value = "-1";
     PushID(label);   // what the panel's Selectable lines and PushIDs see stays the same at every pass
-    return gCombo != nullptr;
+    return true;
 }
 
 void EndCombo() {
     if (!gOn) { Orig_EndCombo(); return; }
     PopID();
-    gCombo = nullptr;
+    gCombo = -1;
 }
 
 bool Combo(const char* label, int* current, const char* const items[], int count, int popup) {
@@ -192,11 +192,12 @@ bool Combo(const char* label, int* current, const char* (*getter)(void*, int), v
 }
 
 static bool option(const char* label, bool selected) {
-    if (!gCombo) return false;
+    if (gCombo < 0) return false;
+    Item& combo = gItems[(size_t)gCombo];
     const int index = gOption++;
-    gCombo->options.push_back(visible(label));
-    if (selected) gCombo->value = std::to_string(index);
-    return gHasEdit && gCombo->id == gEditId && atoi(gEditValue.c_str()) == index;
+    combo.options.push_back(visible(label));
+    if (selected) combo.value = std::to_string(index);
+    return gHasEdit && combo.id == gEditId && atoi(gEditValue.c_str()) == index;
 }
 
 bool Selectable(const char* label, bool selected, ImGuiSelectableFlags flags, const ImVec2& size) {
