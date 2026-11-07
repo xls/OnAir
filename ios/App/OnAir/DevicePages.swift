@@ -42,6 +42,9 @@ struct SourcePage: View {
                                 loadAntenna()
                             }))
                         }
+                        if value == "rx1" ? upconverters.rx1 : upconverters.rx2 {
+                            OscillatorRow(antenna: value, name: name, mhz: value == "rx1" ? upconverters.rx1lo : upconverters.rx2lo, changed: loadAntenna)
+                        }
                     }
                 }
             }
@@ -67,12 +70,69 @@ struct SourcePage: View {
     private struct Upconverters: Decodable {
         var rx1 = false
         var rx2 = false
+        var rx1lo = "125"
+        var rx2lo = "125"
     }
 
     private func loadAntenna() {
         guard let text = onair_radio_settings_json() else { return }
         antenna = (try? JSONDecoder().decode([Setting].self, from: Data(String(cString: text).utf8)))?.first { $0.key == "antenna" }
         if let json = onair_converter_json(), let new = try? JSONDecoder().decode(Upconverters.self, from: Data(String(cString: json).utf8)) { upconverters = new }
+    }
+}
+
+/// A Ham It Up's own frequency offset, for a tuning error or another converter. Off is the standard 125 MHz.
+private struct OscillatorRow: View {
+    let antenna, name, mhz: String
+    let changed: () -> Void
+    @State private var custom = false
+    @State private var entry = ""
+    @FocusState private var typing: Bool
+
+    var body: some View {
+        PanelRow(label: "Custom offset on \(name)", help: "Off is the standard 125 MHz.") {
+            RockerSwitch(isOn: Binding(get: { custom }, set: { on in
+                custom = on
+                if !on {
+                    entry = "125"
+                    onair_antenna_converter_lo(antenna, 0)
+                    changed()
+                }
+            }))
+        }
+        .onAppear {
+            entry = mhz
+            custom = (Double(mhz) ?? 125) != 125
+        }
+        if custom {
+            PanelRow(label: "Frequency offset (MHz)", help: "What the converter adds to the frequency at the antenna.") {
+                GlassWindow(corner: 4) {
+                    TextField("125", text: $entry)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(RadioTheme.amber)
+                        .multilineTextAlignment(.trailing)
+                        .keyboardType(.decimalPad)
+                        .focused($typing)
+                        .padding(6)
+                        .toolbar {
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                if typing { Button("Done") { typing = false } }
+                            }
+                        }
+                }
+                .frame(width: 110, height: 32)
+            }
+            .onChange(of: typing) {
+                guard !typing else { return }
+                if let value = Double(entry), value > 0 {
+                    onair_antenna_converter_lo(antenna, value)
+                    changed()
+                } else {
+                    entry = mhz
+                }
+            }
+        }
     }
 }
 

@@ -191,6 +191,7 @@ struct RootView: View {
                 try? text.write(to: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("radio.txt"), atomically: true, encoding: .utf8)
             }
         }
+        if let lo = value("--oscillator").flatMap(Double.init) { onair_antenna_converter_lo("rx1", lo) }
         if let antenna = value("--upconverter") { onair_antenna_converter_set(antenna, true) }
         if let antenna = value("--no-upconverter") { onair_antenna_converter_set(antenna, false) }
         if let antenna = value("--antenna") { onair_radio_setting_set("antenna", antenna) }

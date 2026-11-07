@@ -908,7 +908,8 @@ const char* onair_converter_json(void) {
     App& a = appRunApp();
     const auto setting = [&](const char* key, const char* fallback) { const auto it = a.tune.radio.find(key); return it != a.tune.radio.end() ? it->second : std::string(fallback); };
     gJson = "{\"id\":" + quoted(setting(dect2::convKeyPreset(), "none")) + ",\"lo\":" + quoted(setting(dect2::convKeyLo(), "125")) + ",\"rx1\":" + (setting("conv.rx1", "") == "hamitup" ? "true" : "false") +
-            ",\"rx2\":" + (setting("conv.rx2", "") == "hamitup" ? "true" : "false") + ",\"presets\":[";
+            ",\"rx2\":" + (setting("conv.rx2", "") == "hamitup" ? "true" : "false") +
+            ",\"rx1lo\":" + quoted(setting("conv.rx1.lo", "125")) + ",\"rx2lo\":" + quoted(setting("conv.rx2.lo", "125")) + ",\"presets\":[";
     bool first = true;
     for (const dect2::ConverterPreset& p : dect2::converterPresets()) {
         gJson += std::string(first ? "" : ",") + "{\"id\":" + quoted(p.id) + ",\"name\":" + quoted(p.name) + ",\"custom\":" + (p.custom ? "true" : "false") + "}";
@@ -924,10 +925,29 @@ static std::string antennaKey(const App& a) {
     return "conv." + (it != a.tune.radio.end() ? it->second : std::string("rx1"));
 }
 
+// "conv.rx1.lo": that antenna's Ham It Up oscillator in MHz when it is not the nominal 125, as the converter's "custom" preset
 static void applyAntennaConverter(App& a) {
-    const auto it = a.tune.radio.find(antennaKey(a));
-    if (it == a.tune.radio.end() || it->second == "none") a.tune.radio.erase(dect2::convKeyPreset());
-    else a.tune.radio[dect2::convKeyPreset()] = it->second;
+    const std::string key = antennaKey(a);
+    const auto it = a.tune.radio.find(key);
+    a.tune.radio.erase(dect2::convKeyLo());
+    a.tune.radio.erase(dect2::convKeyMode());
+    if (it == a.tune.radio.end() || it->second == "none") { a.tune.radio.erase(dect2::convKeyPreset()); return; }
+    a.tune.radio[dect2::convKeyPreset()] = it->second;
+    const auto lo = a.tune.radio.find(key + ".lo");
+    if (it->second == "hamitup" && lo != a.tune.radio.end()) {
+        a.tune.radio[dect2::convKeyPreset()] = "custom";
+        a.tune.radio[dect2::convKeyLo()] = lo->second;
+        a.tune.radio[dect2::convKeyMode()] = "add";
+    }
+}
+
+void onair_antenna_converter_lo(const char* antenna, double mhz) {
+    App& a = appRunApp();
+    const std::string key = std::string("conv.") + antenna + ".lo";
+    if (mhz <= 0 || std::fabs(mhz - 125) < 1e-7) a.tune.radio.erase(key); else a.tune.radio[key] = textOf(mhz);
+    applyAntennaConverter(a);
+    saveRadioSettings(a);
+    if (a.engine.running()) startReceiver(a);
 }
 
 void onair_antenna_converter_set(const char* antenna, bool hamItUp) {
