@@ -70,7 +70,7 @@ struct TexterPage: View {
             LazyVStack(alignment: .leading, spacing: 8) {
                 if bubbles.isEmpty {
                     Text(receiver.status.running ? (results.summary ?? "Listening…") : "Press power to start").foregroundStyle(.secondary).padding()
-                    InstrumentGrid(results: results)
+                    if receiver.status.running { InstrumentGrid(results: results) }   // stopped, the core still reports the TV defaults
                     InstrumentTables(results: results)
                 }
                 ForEach(bubbles) { bubble in

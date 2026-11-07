@@ -68,7 +68,7 @@ struct ModeResultsPage: View {
                     Text(receiver.status.running ? (results.summary ?? "Listening…") : "Press power to start").font(.footnote).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                InstrumentGrid(results: results)
+                if receiver.status.running { InstrumentGrid(results: results) }   // stopped, the core still reports the TV defaults
                 InstrumentTables(results: results)
             }
             .padding(12)

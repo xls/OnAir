@@ -28,7 +28,7 @@ struct PicturePage: View {
                     }
                 }
                 .onTapGesture { if image != nil { zoomed = true } }
-                InstrumentGrid(results: results)
+                if receiver.status.running { InstrumentGrid(results: results) }   // stopped, the core still reports the TV defaults
                 InstrumentTables(results: results)
             }
             .padding(12)

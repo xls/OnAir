@@ -33,7 +33,7 @@ bottom bar, the page chips and native sheets.
 
 What was measured, on the simulator unless it says the iPhone. `tools/verify_all.py` runs every mode against OnAir's built-in test signal and logs what the decoder produced and what the screen shows. `tools/make_test_iq.cpp` writes SigMF recordings for modes with no built-in signal; copy them to `Documents/Recordings` and play them with `--iq <name>`.
 
-Last full sweep: 183 of 183 modes start and none crashes.
+Last full sweep: 183 of 183 modes start with the settings drawer open and none crashes, about 1,570 controls. `--option-sweep` changed 1,263 settings: 1,246 took; the rest are pick lists that retune, live filters and clamped numbers.
 
 | Screen | Measured | Not yet done |
 |---|---|---|

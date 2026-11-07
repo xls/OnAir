@@ -33,7 +33,7 @@ struct DevicesPage: View {
         ScrollView {
             VStack(spacing: 12) {
                 header
-                InstrumentGrid(results: results)
+                if receiver.status.running { InstrumentGrid(results: results) }   // stopped, the core still reports the TV defaults
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(devices) { tile($0) }
                 }

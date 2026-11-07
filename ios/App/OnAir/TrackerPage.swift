@@ -120,7 +120,7 @@ struct TrackerPage: View {
                 ScrollView {
                     VStack(spacing: 8) {
                         if let summary = results.summary { Text(summary).font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
-                        InstrumentGrid(results: results)
+                        if receiver.status.running { InstrumentGrid(results: results) }   // stopped, the core still reports the TV defaults
                         InstrumentTables(results: results)
                     }
                     .padding(10)
