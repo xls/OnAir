@@ -398,7 +398,7 @@ private struct AboutSection: View {
     var body: some View {
         PanelSection(title: "About") {
             PanelRow(label: "Tuneit", help: "Version \(version)") { EmptyView() }
-            PanelRow(label: "Built on OnAir", help: "The receivers, decoders and radio drivers are OnAir, by adswill and its contributors, under the GPL 3.0. Tuneit is the iPhone interface on top of it.") { EmptyView() }
+            PanelRow(label: "Built on OnAir", help: "Receivers, decoders and radio drivers by adswill and contributors, GPL 3.0.") { EmptyView() }
             Link(destination: URL(string: "https://github.com/adswill/OnAir")!) {
                 PanelRow(label: "OnAir on GitHub", help: "github.com/adswill/OnAir") {
                     Image(systemName: "arrow.up.right").foregroundStyle(RadioTheme.amber)
