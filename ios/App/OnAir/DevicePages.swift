@@ -153,22 +153,34 @@ struct ModeBrowser: View {
         let id: Int32
         let name, group, blurb: String
         let native: Bool
+        var key: String { "\(group)|\(name)" }   // the index would move when upstream adds a mode
     }
 
     let receiver: Receiver
     let onPick: () -> Void
     @State private var query = ""
     @AppStorage("modesNativeOnly") private var nativeOnly = false
+    @AppStorage("modesFavoritesOnly") private var favoritesOnly = false
+    @AppStorage("modeFavorites") private var favoritesText = ""
     private static let rows: [Row] = (0..<onair_mode_count()).map {
         let name = String(cString: onair_mode_name($0))
         return Row(id: $0, name: name, group: String(cString: onair_mode_group($0)), blurb: String(cString: onair_mode_blurb($0)),
                    native: OnAirFamily.hasNativeScreen(family: Int(onair_mode_family($0)), mode: name))
     }
 
+    private var favorites: Set<String> { Set(favoritesText.split(separator: "\n").map(String.init)) }
+
+    private func toggleFavorite(_ row: Row) {
+        var all = favorites
+        if !all.insert(row.key).inserted { all.remove(row.key) }
+        favoritesText = all.sorted().joined(separator: "\n")
+    }
+
     private var groups: [(String, [Row])] {
+        let favorites = self.favorites
         var order: [String] = []
         var byGroup: [String: [Row]] = [:]
-        for row in Self.rows where (!nativeOnly || row.native) && (query.isEmpty || row.name.localizedCaseInsensitiveContains(query) || row.blurb.localizedCaseInsensitiveContains(query)) {
+        for row in Self.rows where (!nativeOnly || row.native) && (!favoritesOnly || favorites.contains(row.key)) && (query.isEmpty || row.name.localizedCaseInsensitiveContains(query) || row.blurb.localizedCaseInsensitiveContains(query)) {
             if byGroup[row.group] == nil { order.append(row.group) }
             byGroup[row.group, default: []].append(row)
         }
@@ -188,6 +200,20 @@ struct ModeBrowser: View {
         }
     }
 
+    private func star(_ row: Row) -> some View {
+        let on = favorites.contains(row.key)
+        return Button { toggleFavorite(row) } label: {
+            Image(systemName: on ? "star.fill" : "star")
+                .font(.system(size: 13))
+                .foregroundStyle(on ? RadioTheme.amber : Color(white: 0.5))
+                .frame(width: 44, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .offset(x: 2, y: -6)
+        .accessibilityLabel(on ? "Remove \(row.name) from favorites" : "Add \(row.name) to favorites")
+    }
+
     private var list: some View {
         PanelPage(lazy: true) {
             GlassWindow(corner: 6) {
@@ -205,11 +231,15 @@ struct ModeBrowser: View {
                 HardwareKey(lit: nativeOnly, led: .green, action: { nativeOnly.toggle() }) {
                     EngravedLabel(text: "NATIVE ONLY", size: 9)
                 }
-                .frame(height: 46)
-                Text("\(Self.rows.filter(\.native).count) of \(Self.rows.count) native")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                HardwareKey(lit: favoritesOnly, led: RadioTheme.amber, action: { favoritesOnly.toggle() }) {
+                    EngravedLabel(text: "FAVORITES ONLY", size: 9)
+                }
+            }
+            .frame(height: 46)
+            if favoritesOnly && groups.isEmpty {
+                Text("No favorites yet. Turn this off and tap the star on a mode.")
+                    .font(.footnote)
                     .foregroundStyle(Color(white: 0.08))
-                    .shadow(color: .white.opacity(0.4), radius: 0, y: 0.7)
             }
             ForEach(groups, id: \.0) { group, rows in
                 PanelSection(title: group) {
@@ -221,6 +251,7 @@ struct ModeBrowser: View {
                         } label: {
                             PanelRow(label: row.name, help: row.blurb) {
                                 HStack(spacing: 8) {
+                                    Color.clear.frame(width: 26, height: 1)   // the star sits here
                                     Text(row.native ? "NATIVE" : "BASIC")
                                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                                         .foregroundStyle(row.native ? Color.green : Color(white: 0.5))
@@ -236,6 +267,7 @@ struct ModeBrowser: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .overlay(alignment: .topTrailing) { star(row) }
                         .id(row.id)
                     }
                 }

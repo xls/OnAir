@@ -543,14 +543,28 @@ struct ChoiceSheet: View {
     }
 }
 
+/// Brushed metal the size of the screen, drawn once. A sheet behind which it sits can rise and fall with the keyboard without it being redrawn.
+struct StillMetal: View {
+    private let size = UIScreen.main.bounds.size
+
+    var body: some View {
+        BrushedMetal(tone: 0.46)
+            .frame(width: size.width, height: size.height)
+            .drawingGroup()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .clipped()
+    }
+}
+
 /// A brushed plate that scrolls, for pages full of settings.
 struct PanelPage<Content: View>: View {
     var lazy = false   // for long lists: rows are made as they come into view
+    var plate = true   // false: the sheet behind it brings the metal (StillMetal)
     @ViewBuilder let content: Content
 
     var body: some View {
         ZStack {
-            BrushedMetal(tone: 0.46)
+            if plate { BrushedMetal(tone: 0.46) }
             ScrollView {
                 Group {
                     if lazy { LazyVStack(spacing: 16) { content } } else { VStack(spacing: 16) { content } }

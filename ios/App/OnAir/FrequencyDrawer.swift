@@ -51,14 +51,27 @@ struct FrequencyDrawer: View {
     }
 
     var body: some View {
-        PanelPage {
+        PanelPage(plate: false) {
             HStack(spacing: 8) {
                 GlassWindow(corner: 6) {
-                    TextField("", text: $typed, prompt: Text("FREQUENCY \(unit)").foregroundStyle(RadioTheme.amber.opacity(0.4)))
-                        .font(.system(size: 20, weight: .medium, design: .monospaced))
-                        .foregroundStyle(RadioTheme.amber)
-                        .keyboardType(.decimalPad)
-                        .padding(10)
+                    HStack(spacing: 6) {
+                        TextField("", text: $typed, prompt: Text("FREQUENCY \(unit)").foregroundStyle(RadioTheme.amber.opacity(0.4)))
+                            .font(.system(size: 20, weight: .medium, design: .monospaced))
+                            .foregroundStyle(RadioTheme.amber)
+                            .keyboardType(.decimalPad)
+                        if !typed.isEmpty {
+                            Button { typed = "" } label: {
+                                Image(systemName: "xmark.circle.fill").font(.system(size: 19)).foregroundStyle(RadioTheme.amber.opacity(0.65))
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear")
+                        }
+                    }
+                    .padding(.leading, 10)
+                    .padding(.trailing, 4)
+                    .padding(.vertical, 6)
                 }
                 HardwareKey(lit: !typed.isEmpty, action: tuneTyped) {
                     EngravedLabel(text: "TUNE", size: 9)
@@ -67,7 +80,7 @@ struct FrequencyDrawer: View {
             }
             HStack(spacing: 6) {
                 ForEach(Self.units, id: \.name) { item in
-                    HardwareKey(lit: unit == item.name, led: RadioTheme.amber, action: { unit = item.name }) {
+                    HardwareKey(lit: unit == item.name, led: RadioTheme.amber, action: { change(to: item) }) {
                         EngravedLabel(text: item.name, size: 9)
                     }
                     .frame(height: 38)
@@ -128,10 +141,28 @@ struct FrequencyDrawer: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .presentationBackground { StillMetal() }
         .onAppear {
             plan = ChannelPlan.current()
-            typed = ""
+            typed = text(mhz: receiver.status.mhz)
         }
+    }
+
+    private var unitMhz: Double { Self.units.first { $0.name == unit }?.mhz ?? 1 }
+
+    /// The frequency in the unit shown, with no digits it does not need.
+    private func text(mhz: Double) -> String {
+        var number = String(format: "%.9f", mhz / unitMhz)
+        while number.hasSuffix("0") { number.removeLast() }
+        if number.hasSuffix(".") { number.removeLast() }
+        return number
+    }
+
+    /// The same frequency in the other unit.
+    private func change(to item: (name: String, mhz: Double)) {
+        let value = Double(typed.replacingOccurrences(of: ",", with: ".")).map { $0 * unitMhz }
+        unit = item.name
+        if let value { typed = text(mhz: value) }
     }
 
     private func tuneTyped() {
