@@ -193,6 +193,8 @@ struct RootView: View {
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--fake-guide") { onair_fake_guide() }
+        if args.contains("--open-rates") { NotificationCenter.default.post(name: .init("openRates"), object: nil) }
+        if let host = value("--add-rtl") { onair_net_connect(1, host, 1234) }
         if let host = value("--add-radio") {
             onair_net_connect(0, host, 0)
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSLog("OnAirVerify added busy=%d error=%s", onair_net_busy() ? 1 : 0, onair_net_error()) }
@@ -310,6 +312,7 @@ struct StatusStrip: View {
     let onPickMode: () -> Void
     @State private var showDrawer = false
     @State private var showModes = false
+    @State private var showRates = false
 
     /// Internet TV comes over the network: there is no radio to power or tune.
     private var isStream: Bool { receiver.status.family == OnAirFamily.internetTV }
@@ -357,22 +360,13 @@ struct StatusStrip: View {
         return text
     }
 
+    private var rateChoices: [String] {
+        ["Auto (\(msps(receiver.rate.auto)) Msps)"] + receiver.rate.rates.map { "\(msps($0)) Msps\($0 < receiver.rate.need - 1 ? " (too narrow for this mode)" : "")" }
+    }
+
     /// How wide the radio samples, for every mode. Below what the mode needs it stays selectable, and says so.
     private var rateSelector: some View {
-        Menu {
-            Button {
-                receiver.setRate(hz: 0)
-            } label: {
-                Label("Auto (\(msps(receiver.rate.auto)) Msps)", systemImage: receiver.rate.chosen == 0 ? "checkmark" : "")
-            }
-            ForEach(receiver.rate.rates, id: \.self) { hz in
-                Button {
-                    receiver.setRate(hz: hz)
-                } label: {
-                    Label("\(msps(hz)) Msps\(hz < receiver.rate.need - 1 ? " (too narrow for this mode)" : "")", systemImage: abs(receiver.rate.chosen - hz) < 1 ? "checkmark" : "")
-                }
-            }
-        } label: {
+        Button { showRates = true } label: {
             VStack(spacing: 1) {
                 Text("MSPS").font(.system(size: 7, weight: .bold, design: .monospaced)).foregroundStyle(RadioTheme.amber.opacity(0.6))
                 Text(msps(receiver.rate.now)).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(RadioTheme.amber)
@@ -383,6 +377,7 @@ struct StatusStrip: View {
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private var strip: some View {
@@ -442,7 +437,14 @@ struct StatusStrip: View {
         .sheet(isPresented: $showDrawer) {
             FrequencyDrawer(receiver: receiver)
         }
+        .sheet(isPresented: $showRates) {
+            let chosen = receiver.rate.rates.firstIndex { abs($0 - receiver.rate.chosen) < 1 }
+            ChoiceSheet(selected: chosen.map { rateChoices[$0 + 1] } ?? rateChoices[0], options: rateChoices) { index in
+                receiver.setRate(hz: index == 0 ? 0 : receiver.rate.rates[index - 1])
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .init("openTuner"))) { _ in showDrawer = true }
+        .onReceive(NotificationCenter.default.publisher(for: .init("openRates"))) { _ in showRates = true }
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--open-modes") else { return }
             try? await Task.sleep(for: .seconds(2))

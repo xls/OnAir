@@ -732,6 +732,7 @@ private struct ScanView: View {
     let picked: () -> Void
     @AppStorage("tvReception") private var reception = Reception.antenna
     @AppStorage("tvFound") private var foundText = "[]"
+    @State private var showRegions = false
     @State private var plan = ChannelPlan()
     @State private var index: Int?
     @State private var dwell = 0
@@ -753,14 +754,7 @@ private struct ScanView: View {
                     receiver.refresh()
                     reload()
                 }
-                Menu {
-                    ForEach(plan.plans) { item in
-                        Button(item.name) {
-                            onair_channel_plan_set(item.id)
-                            reload()
-                        }
-                    }
-                } label: {
+                Button { showRegions = true } label: {
                     HStack {
                         Text("Region").foregroundStyle(.secondary)
                         Spacer()
@@ -769,6 +763,12 @@ private struct ScanView: View {
                     }
                     .padding(10)
                     .background(TV.card, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .sheet(isPresented: $showRegions) {
+                    ChoiceSheet(selected: plan.planName, options: plan.plans.map(\.name)) { index in
+                        onair_channel_plan_set(plan.plans[index].id)
+                        reload()
+                    }
                 }
                 Button(index == nil ? "Scan \(plan.channels.count) channels" : "Stop", action: toggle)
                     .font(.body.weight(.semibold))

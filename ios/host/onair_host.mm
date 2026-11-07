@@ -225,6 +225,7 @@ static const HamItUp* hamItUpInUse(const App& a) {
 
 static bool antennaForMode(App& a, int family);
 static void linkForAntenna(App& a);
+static void matchServerRate(App& a);
 static void keepDabScan(App& a);
 static void restoreDabScan(App& a);
 static bool gStartTried = false;   // the last thing asked of POWER was to start: its refusal is shown until something changes
@@ -980,6 +981,31 @@ static void linkForAntenna(App& a) {
     if (d.board == "pluto") d.steadyRateHz = antennaOf(a) == "both" ? 4e6 : 0;
 }
 
+// A server may keep its own rate whatever it is asked (OnAir's "Share my radio" does). The receiver would then run fast or slow, so the rate that
+// really arrives is measured, and the radio is reopened at it. The first seconds after a start are the engine's own to settle.
+static void matchServerRate(App& a) {
+    static std::string radio;
+    static int off = 0, tries = 0;
+    static auto last = std::chrono::steady_clock::time_point{};
+    const DeviceInfo d = a.devices[(size_t)a.devIdx];
+    if (d.name != radio) { radio = d.name; tries = 0; off = 0; }
+    dect2::RtlTcpThroughput t;
+    const double running = a.engine.radioRate();
+    if (d.board != "rtltcp" || !a.engine.running() || running <= 0 || !dect2::rtlTcpThroughput(d.nativeArgs, t) || !t.valid || std::fabs(t.achievedHz / running - 1) < 0.04) { off = 0; return; }
+    const auto now = std::chrono::steady_clock::now();
+    if (++off < 12 || tries >= 3 || now - last < std::chrono::seconds(6)) return;   // 3 s of it (four reads a second)
+    const double hz = std::round(t.achievedHz / 1000) * 1000;
+    off = 0;
+    tries++;
+    last = now;
+    a.engine.log("the rtl_tcp server sends " + std::to_string(hz / 1e6) + " Msps: following it");
+    if (hz > a.devices[(size_t)a.devIdx].maxRateHz) {   // listed as an RTL-SDR until now; what arrives proves it is faster
+        a.devices[(size_t)a.devIdx].maxRateHz = hz;
+        a.devices[(size_t)a.devIdx].rateRanges.clear();
+    }
+    chooseSampleRate(a, hz);
+}
+
 // The antenna chosen in a mode comes back with that mode ("ant.<family>" among the radio's settings)
 static bool antennaForMode(App& a, int family) {
     const auto& settings = a.devices[(size_t)a.devIdx].settings;
@@ -1144,6 +1170,7 @@ const char* onair_status_json(void) {
     const int deliveredLow = a.engine.running() && loss.rateLow ? (int)loss.deliveredPct : 0;   // the percentage, when a live radio falls short
     keepDabScan(a);
     linkForAntenna(a);
+    matchServerRate(a);
     const int hamItUpTop = converter && a.freqMhz * 1e6 > converter->highHz ? (int)(converter->highHz / 1e6) : 0;   // the top of it, when tuned above
     gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
               dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +

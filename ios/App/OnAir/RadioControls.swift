@@ -488,13 +488,10 @@ struct SelectorWindow: View {
     let selected: String
     let options: [String]
     let choose: (Int) -> Void
+    @State private var open = false
 
     var body: some View {
-        Menu {
-            ForEach(Array(options.enumerated()).filter { !$0.element.isEmpty }, id: \.offset) { index, name in
-                Button(name) { choose(index) }
-            }
-        } label: {
+        Button { open = true } label: {
             GlassWindow(corner: 4) {
                 HStack(spacing: 6) {
                     Text(selected).font(.system(size: 12, weight: .medium, design: .monospaced)).lineLimit(1).minimumScaleFactor(0.7)
@@ -506,6 +503,43 @@ struct SelectorWindow: View {
             }
             .fixedSize()
         }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $open) { ChoiceSheet(selected: selected, options: options, choose: choose) }
+    }
+}
+
+/// A list to pick from. A sheet, because iOS rebuilds a pop-up menu each time the live page around it changes: it would pulse and not scroll.
+struct ChoiceSheet: View {
+    let selected: String
+    let options: [String]
+    let choose: (Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            BrushedMetal(tone: 0.46).ignoresSafeArea()
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(options.enumerated()).filter { !$0.element.isEmpty }, id: \.offset) { index, name in
+                        Button {
+                            choose(index)
+                            dismiss()
+                        } label: {
+                            PanelRow(label: name) {
+                                if name == selected { Image(systemName: "checkmark").foregroundStyle(RadioTheme.amber) }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 14)
+                .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+                .padding(14)
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 

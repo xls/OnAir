@@ -319,7 +319,7 @@ struct SpectrumPage: View {
                 }
                 SpectrumGestures(
                     tap: { x in
-                        onair_spectrum_tune(spectrum.frequency(atFraction: x / width) / 1e6)
+                        onair_spectrum_scrub(spectrum.frequency(atFraction: x / width) / 1e6)   // the cursor moves, as in a scrub; the view stays
                         receiver.refresh()
                     },
                     scrub: { points, done in scrub(points: points, width: width, done: done) },
@@ -473,7 +473,7 @@ struct RigSpectrumTouch: View {
             ZStack(alignment: .bottomTrailing) {
                 SpectrumGestures(
                     tap: { x in
-                        onair_spectrum_tune(spectrum.frequency(atFraction: x / width) / 1e6)
+                        onair_spectrum_scrub(spectrum.frequency(atFraction: x / width) / 1e6)   // the cursor moves, as in a scrub; the view stays
                         receiver.refresh()
                     },
                     scrub: { points, done in scrub(points, width, done) },
