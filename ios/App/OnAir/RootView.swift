@@ -61,6 +61,7 @@ struct RootView: View {
     @State private var started = false
     @State private var autoSelected = false
     @State private var drawer: DrawerKind?
+    @State private var location = StationLocation()
     @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -94,6 +95,7 @@ struct RootView: View {
             if !started {
                 started = true
                 onair_set_page(ONAIR_PAGE_NONE)
+                fillInLocation()
                 applyTestArguments()
             }
             receiver.refresh()
@@ -150,6 +152,15 @@ struct RootView: View {
     }
 
     /// `--mode <name> --source test --start` pick what to run at launch; the status then goes to the log. Used by tools/verify_mode.sh.
+    /// A receiver that has no position yet takes the phone's. One entered by hand stays.
+    private func fillInLocation() {
+        var lat = 0.0, lon = 0.0
+        onair_location(&lat, &lon)
+        guard lat == 0, lon == 0 else { return }
+        location.found = { onair_location_set($0.latitude, $0.longitude) }
+        location.start()
+    }
+
     private func applyTestArguments() {
         let args = ProcessInfo.processInfo.arguments
         func value(_ name: String) -> String? {

@@ -51,6 +51,7 @@ struct SettingsPage: View {
                     .padding(9)
                 }
             }
+            if only == nil { LocationSection() }
             if only == nil {
                 PanelSection(title: "Sound output") {
                     PanelRow(label: "Output", help: outputName) {
@@ -278,4 +279,49 @@ struct RadioSettingsPage: View {
     }
 
     private func load() { rows = decode([Row].self, onair_radio_settings_json()) ?? [] }
+}
+
+/// Where the receiver is, for ranges on the maps and anything else that needs it.
+private struct LocationSection: View {
+    @State private var location = StationLocation()
+    @State private var lat = 0.0
+    @State private var lon = 0.0
+    @State private var waiting = false
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        PanelSection(title: "Location") {
+            PanelRow(label: "Receiver position", help: note) {
+                Text(lat == 0 && lon == 0 ? "not set" : String(format: "%.4f, %.4f", lat, lon))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(RadioTheme.amber)
+            }
+            HardwareKey(action: useMyLocation) {
+                EngravedLabel(text: waiting ? "FINDING YOU" : "USE MY LOCATION", size: 9)
+            }
+            .frame(height: 44)
+            .padding(10)
+        }
+        .onAppear(perform: load)
+    }
+
+    private var note: String {
+        location.denied ? "Location is off for OnAir. Tap the key to open iOS Settings." : ""
+    }
+
+    private func load() { onair_location(&lat, &lon) }
+
+    private func useMyLocation() {
+        if location.denied {
+            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            return
+        }
+        waiting = true
+        location.found = {
+            onair_location_set($0.latitude, $0.longitude)
+            waiting = false
+            load()
+        }
+        location.start()
+    }
 }

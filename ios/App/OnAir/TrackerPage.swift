@@ -49,7 +49,9 @@ extension TrackerPage {
 /// Where the phone is, asked for once when a map opens.
 @Observable final class StationLocation: NSObject, CLLocationManagerDelegate {
     private(set) var coordinate: CLLocationCoordinate2D?
+    private(set) var denied = false
     private let manager = CLLocationManager()
+    var found: ((CLLocationCoordinate2D) -> Void)?
 
     func start() {
         manager.delegate = self
@@ -60,11 +62,13 @@ extension TrackerPage {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         coordinate = locations.last?.coordinate
+        if let coordinate { found?(coordinate) }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        denied = manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted
         if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways { manager.requestLocation() }
     }
 }

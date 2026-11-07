@@ -128,6 +128,8 @@ void onair_options_watch(bool on);                                 // keep readi
 const char* onair_options_json(void);                              // [{id, kind, label, section, value, lo, hi, options, disabled}]
 void onair_option_set(unsigned id, const char* value);
 bool onair_filter_band(double* lowHz, double* highHz);             // what is being listened to, for the box on the spectrum
+void onair_location(double* lat, double* lon);                     // the receiver position, 0,0 when never set
+void onair_location_set(double lat, double lon);
 const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs
 void onair_tv_play_file(const char* path);                        // a recorded .ts through the demux and the player, at its own pace
 void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic
