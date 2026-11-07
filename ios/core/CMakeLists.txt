@@ -15,7 +15,7 @@ add_subdirectory("${_onair_repo}" "${CMAKE_BINARY_DIR}/onair-core" EXCLUDE_FROM_
 
 set(ONAIR_IIO_SYMBOLS "" CACHE FILEPATH "Generated table of libiio functions (build_core.sh)")
 # results_json.cpp turns telemetry into cards and tables. It has no Android code in it, so it is shared rather than copied
-target_sources(dect2 PRIVATE "${_onair_repo}/android/native/src/results_json.cpp" ../host/onair_host.mm ../host/results_aviation.cpp ../host/results_satellite.cpp ../host/results_iot.cpp ../host/results_utility.cpp ../host/iptv_host.cpp ../host/iq_host.cpp ../shim/glfw_shim.mm ../platform/power_ios.mm ../platform/airplay_ios.mm)
+target_sources(dect2 PRIVATE "${_onair_repo}/android/native/src/results_json.cpp" ../host/onair_host.mm ../host/results_aviation.cpp ../host/results_satellite.cpp ../host/results_iot.cpp ../host/results_utility.cpp ../host/iptv_host.cpp ../host/iq_host.cpp ../host/shortwave_host.cpp ../shim/glfw_shim.mm ../platform/power_ios.mm ../platform/airplay_ios.mm)
 target_include_directories(dect2 PRIVATE include ../host "${_onair_repo}/android/native/src")
 
 add_library(onair_ios STATIC src/stubs_ext.c "${ONAIR_IIO_SYMBOLS}")

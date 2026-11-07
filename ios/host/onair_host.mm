@@ -23,6 +23,8 @@
 #include "platform/power.h"
 #include "dect2/common/thread_name.h"
 #include "dect2/net/netradio.h"
+#include "dect2/engine/rate_choice.h"
+#include "dect2/general/general_rx.h"
 #include "dect2/net/remote_api.h"
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
@@ -581,11 +583,37 @@ const char* onair_general_json(void) {
     App& a = appRunApp();
     const auto& g = a.rx.general;
     gJson = "{\"demod\":" + std::to_string(generalCurrentDemod()) + ",\"width\":" + textOf(generalCurrentWidth()) + ",\"levelDb\":" + textOf(g.levelDb) + ",\"noiseDb\":" + textOf(g.noiseDb) +
-            ",\"snrDb\":" + textOf(g.snrDb) + ",\"squelchOpen\":" + (g.squelchOpen ? "true" : "false") + "}";
+            ",\"snrDb\":" + textOf(g.snrDb) + ",\"squelchOpen\":" + (g.squelchOpen ? "true" : "false") + ",\"presets\":[";
+    int presets = 0;
+    const double* widths = dect2::generalWidthPresets(generalCurrentDemod(), presets);
+    for (int i = 0; i < presets; i++) gJson += (i ? "," : "") + textOf(widths[i]);
+    gJson += "]}";
     return gJson.c_str();
 }
 
 void onair_general_set(int demod, double widthHz) { generalSetDemodWidth(demod, widthHz); }
+
+// The radio's sample rate for this mode, as the desktop's RATE box: Auto is the mode's own rate
+const char* onair_rate_json(void) {
+    static std::string json;
+    App& a = appRunApp();
+    const DeviceInfo& d = a.devices[(size_t)a.devIdx];
+    const bool run = a.engine.running(), usable = d.isRadio() || d.kind == DeviceInfo::Synthetic;
+    json = "{\"usable\":" + std::string(usable ? "true" : "false") + ",\"now\":" + textOf(run ? a.engine.radioRate() : a.chosenRateHz > 0 ? a.chosenRateHz : a.tune.sampleRate) +
+           ",\"chosen\":" + textOf(a.chosenRateHz) + ",\"auto\":" + textOf(a.autoRateHz > 0 ? a.autoRateHz : a.tune.sampleRate) + ",\"need\":" + textOf(modeMinSampleRate(a)) + ",\"rates\":[";
+    bool first = true;
+    if (usable) for (const dect2::RateEntry& e : dect2::rateEntries(dect2::rateLimitsOf(d), 0)) {
+        json += (first ? "" : ",") + textOf(e.getHz);
+        first = false;
+    }
+    json += "]}";
+    return json.c_str();
+}
+
+void onair_rate_set(double hz) {
+    gStartTried = false;
+    chooseSampleRate(appRunApp(), hz);
+}
 
 bool onair_tx_supported(void) {
     App& a = appRunApp();

@@ -117,6 +117,13 @@ const char* onair_iq_list_json(void);                              // [{name, pa
 bool onair_iq_open(const char* path, double rateHz);               // play it, looping; rateHz is for a raw file with no rate in its name
 bool onair_iq_record(bool on);
 const char* onair_iq_record_json(void);                            // {active, seconds, bytes, dropped, error}
+const char* onair_rate_json(void);                                 // {usable, now, chosen, auto, need, rates: [Hz]}
+void onair_rate_set(double hz);                                    // the radio's sample rate for this mode, 0 = Auto
+const char* onair_sw_json(void);                                   // {auto, decoders: [{id, name, group, on, picture}], bands: [{name, khz}]}
+void onair_sw_press(int id);                                       // start or stop a decoder
+void onair_sw_auto(bool on);
+void onair_sw_stop_all(void);
+void onair_sw_tune_khz(double khz);
 const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs
 void onair_tv_play_file(const char* path);                        // a recorded .ts through the demux and the player, at its own pace
 void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic

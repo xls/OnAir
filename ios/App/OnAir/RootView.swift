@@ -20,11 +20,12 @@ extension OnAirFamily {
     /// LoRa mesh networks, pagers, aircraft data links, marine text and satellite messages
     static let messaging: Set<Int> = [20, 23, 15, 16, 17, 18, 27, 35, 82, 76, 81, 146, 147, 204, 141]
     /// Weather satellites and anything else that decodes pictures
-    static let pictures: Set<Int> = [59, 60, 64, 80, 206, 230, 231, 232, 233, 234, 235, 236, 53, 131, 212]
+    static let pictures: Set<Int> = [59, 60, 64, 80, 206, 230, 231, 232, 233, 234, 235, 236, 53, 131]
     /// Sensors, networks and cells
     static let devices: Set<Int> = [28, 32, 39, 51, 54, 57, 65, 69, 70, 77, 78, 84, 86, 98, 71, 143, 148, 153, 200, 210]
 
-    static func isHam(family: Int, mode: String) -> Bool { hamFamilies.contains(family) || mode == "General receiver" }
+    static func isHam(family: Int, mode: String) -> Bool { hamFamilies.contains(family) || mode == "General receiver" || family == shortwave }
+    static let shortwave = 212
 
     /// True when the mode opens a screen of its own rather than the generic results list. RootView's page choice follows the same sets.
     static func hasNativeScreen(family: Int, mode: String) -> Bool {
@@ -160,6 +161,8 @@ struct RootView: View {
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--agc") { onair_agc_set(true) }
+        if let id = value("--sw-press").flatMap(Int32.init) { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { onair_sw_press(id) } }
+        if let rate = value("--rate").flatMap(Double.init) { onair_rate_set(rate * 1e6) }
         if args.contains("--start") && !onair_running() { receiver.startStop() }  // the automatic modes start themselves
         if let address = value("--iptv") { onair_iptv_open(address) }
         if let channel = value("--iptv-channel").flatMap(Int32.init) {
@@ -261,6 +264,41 @@ struct StatusStrip: View {
         }
     }
 
+    private func msps(_ hz: Double) -> String {
+        var text = String(format: "%.3f", hz / 1e6)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text
+    }
+
+    /// How wide the radio samples, for every mode. Below what the mode needs it stays selectable, and says so.
+    private var rateSelector: some View {
+        Menu {
+            Button {
+                receiver.setRate(hz: 0)
+            } label: {
+                Label("Auto (\(msps(receiver.rate.auto)) Msps)", systemImage: receiver.rate.chosen == 0 ? "checkmark" : "")
+            }
+            ForEach(receiver.rate.rates, id: \.self) { hz in
+                Button {
+                    receiver.setRate(hz: hz)
+                } label: {
+                    Label("\(msps(hz)) Msps\(hz < receiver.rate.need - 1 ? " (too narrow for this mode)" : "")", systemImage: abs(receiver.rate.chosen - hz) < 1 ? "checkmark" : "")
+                }
+            }
+        } label: {
+            VStack(spacing: 1) {
+                Text("MSPS").font(.system(size: 7, weight: .bold, design: .monospaced)).foregroundStyle(RadioTheme.amber.opacity(0.6))
+                Text(msps(receiver.rate.now)).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(RadioTheme.amber)
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(width: 40)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+    }
+
     private var strip: some View {
         ZStack {
             BrushedMetal(tone: 0.46)
@@ -289,13 +327,15 @@ struct StatusStrip: View {
                         .buttonStyle(.plain)
                         .disabled(isStream)
 
+                        if receiver.rate.usable { rateSelector }
+
                         Button {
                             receiver.setMuted(!receiver.status.muted)
                         } label: {
                             Image(systemName: receiver.status.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                 .font(.system(size: 15))
                                 .foregroundStyle(receiver.status.muted ? Color.red : RadioTheme.amber)
-                                .frame(width: 42)
+                                .frame(width: 34)
                                 .frame(maxHeight: .infinity)
                                 .contentShape(Rectangle())
                         }

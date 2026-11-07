@@ -22,9 +22,9 @@ private struct HamBand: Identifiable {
 }
 
 private enum VoiceMode: String, CaseIterable, Identifiable {
-    case usb = "USB", lsb = "LSB", cw = "CW", am = "AM", fm = "FM"
+    case usb = "USB", lsb = "LSB", cw = "CW", am = "AM", fm = "FM", wfm = "WFM"
     var id: Self { self }
-    var demod: Int32 { switch self { case .fm: 0; case .am: 2; case .usb: 3; case .lsb: 4; case .cw: 5 } }
+    var demod: Int32 { switch self { case .fm: 0; case .wfm: 1; case .am: 2; case .usb: 3; case .lsb: 4; case .cw: 5 } }
 }
 
 private struct General: Decodable {
@@ -34,6 +34,25 @@ private struct General: Decodable {
     var noiseDb = -120.0
     var snrDb = 0.0
     var squelchOpen = false
+    var presets: [Double] = []
+}
+
+private struct Shortwave: Decodable {
+    struct Decoder: Decodable, Identifiable {
+        let id: Int32
+        let name, group: String
+        let on, picture: Bool
+    }
+
+    struct Band: Decodable, Identifiable {
+        var id: String { name }
+        let name: String
+        let khz: Double
+    }
+
+    var auto = false
+    var decoders: [Decoder] = []
+    var bands: [Band] = []
 }
 
 private struct DecodeTable: Decodable {
@@ -54,36 +73,63 @@ struct HamPage: View {
     @State private var general = General()
     @State private var results = DecodeTable()
     @State private var showTransmit = false
+    @AppStorage("rigStepHz") private var stepHz = 1000.0
+    @AppStorage("swHamBands") private var hamBands = false
+    @State private var shortwave = Shortwave()
+    @State private var showPicture = false
     @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+    private static let steps: [Double] = [100, 1000, 5000, 12500, 25000, 100_000]
     private static let digital = ["FT8", "FT4", "WSPR", "JS8Call", "PSK31", "RTTY", "CW", "SSTV", "Olivia"]
+    private static let decoderGroups = ["Text", "Weak signal", "Images", "Data links", "Other"]
 
-    private var isVoice: Bool { receiver.status.mode == "General receiver" }
+    private var isShortwave: Bool { receiver.status.family == OnAirFamily.shortwave }
+    private var isVoice: Bool { receiver.status.mode == "General receiver" || isShortwave }
 
     /// S1 is -121 dBm and each S unit 6 dB, S9 at -73: a fair reading of dBFS on an unknown front end, shown as a position on the scale.
     private var sMeter: Double { min(max((general.levelDb + 110) / 80, 0), 1) }
 
     var body: some View {
         FacePlate {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 GlassWindow(corner: 6) {
                     SpectrumMetalView(renderer: spectrum)
                 }
-                .frame(height: 110)
+                .frame(height: isVoice ? 84 : 110)
                 vfo
-                bands
-                modes
                 if isVoice {
-                    voiceControls
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 6) {
+                            if isShortwave {
+                                shortwaveBands
+                                shortwaveDemods
+                                filters
+                                tuning
+                                decoderKeys
+                                decodedText
+                            } else {
+                                bands
+                                modes
+                                filters
+                                tuning
+                                transmitKey
+                            }
+                        }
+                    }
                 } else {
+                    bands
+                    modes
                     decodeLog
+                    transmitKey
                 }
-                transmitKey
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
         }
         .sheet(isPresented: $showTransmit) {
             TransmitSheet(receiver: receiver)
+        }
+        .sheet(isPresented: $showPicture) {
+            PicturePage(receiver: receiver)
         }
         .onAppear(perform: load)
         .onReceive(tick) { _ in load() }
@@ -93,8 +139,8 @@ struct HamPage: View {
         HStack(spacing: 8) {
             GlassWindow(corner: 6) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(format: "%.3f", receiver.status.mhz))
-                        .font(.system(size: 34, weight: .medium, design: .monospaced))
+                    Text(vfoText)
+                        .font(.system(size: 30, weight: .medium, design: .monospaced))
                         .foregroundStyle(Rig.lcd)
                         .shadow(color: Rig.lcd.opacity(0.7), radius: 7)
                         .lineLimit(1)
@@ -109,21 +155,26 @@ struct HamPage: View {
             NeedleMeter(title: "S", value: receiver.status.running ? sMeter : 0, scale: ["1", "5", "9", "+40"])
                 .frame(width: 138)
         }
-        .frame(height: 76)
+        .frame(height: 66)
     }
 
+    /// Three decimals, more only when tuned between kHz.
+    private var vfoText: String {
+        let hz = (receiver.status.mhz * 1e6).rounded()
+        return hz.truncatingRemainder(dividingBy: 1000) == 0 ? String(format: "%.3f", receiver.status.mhz) : String(format: "%.4f", receiver.status.mhz)
+    }
+
+    private func keyGrid(_ columns: Int) -> [GridItem] { Array(repeating: GridItem(.flexible(), spacing: 4), count: columns) }
+
     private var bands: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(HamBand.all) { band in
-                    HardwareKey(lit: isOn(band), led: Rig.lcd, action: { pick(band) }) {
-                        EngravedLabel(text: band.name, size: 10)
-                    }
-                    .frame(width: 46)
+        LazyVGrid(columns: keyGrid(6), spacing: 4) {
+            ForEach(HamBand.all) { band in
+                HardwareKey(lit: isOn(band), led: Rig.lcd, action: { pick(band) }) {
+                    EngravedLabel(text: band.name, size: 10)
                 }
+                .frame(height: 32)
             }
         }
-        .frame(height: 42)
     }
 
     private func isOn(_ band: HamBand) -> Bool {
@@ -141,23 +192,20 @@ struct HamPage: View {
     }
 
     private var modes: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(VoiceMode.allCases) { mode in
-                    HardwareKey(lit: isVoice && Int32(general.demod) == mode.demod, led: .green, action: { select(voice: mode) }) {
-                        EngravedLabel(text: mode.rawValue, size: 9)
-                    }
-                    .frame(width: 52)
+        LazyVGrid(columns: keyGrid(5), spacing: 4) {
+            ForEach(VoiceMode.allCases) { mode in
+                HardwareKey(lit: isVoice && Int32(general.demod) == mode.demod, led: .green, action: { select(voice: mode) }) {
+                    EngravedLabel(text: mode.rawValue, size: 9)
                 }
-                ForEach(Self.digital, id: \.self) { name in
-                    HardwareKey(lit: receiver.status.mode == name, led: .green, action: { select(digital: name) }) {
-                        EngravedLabel(text: name.uppercased(), size: 8)
-                    }
-                    .frame(width: 68)
+                .frame(height: 32)
+            }
+            ForEach(Self.digital, id: \.self) { name in
+                HardwareKey(lit: receiver.status.mode == name, led: .green, action: { select(digital: name) }) {
+                    EngravedLabel(text: name == "CW" ? "MORSE" : name.uppercased(), size: 8)
                 }
+                .frame(height: 32)
             }
         }
-        .frame(height: 42)
     }
 
     private func select(voice mode: VoiceMode) {
@@ -171,21 +219,148 @@ struct HamPage: View {
         receiver.refresh()
     }
 
-    private var voiceControls: some View {
-        GlassWindow(corner: 6) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(String(format: "FILTER %.1f kHz", general.width / 1000)).font(.system(size: 13, design: .monospaced)).foregroundStyle(Rig.lcd)
-                HStack(spacing: 4) {
-                    ForEach([500.0, 1800, 2400, 2700, 3000, 6000], id: \.self) { width in
-                        HardwareKey(lit: abs(general.width - width) < 1, led: Rig.lcd, action: { onair_general_set(Int32(general.demod), width) }) {
-                            EngravedLabel(text: width >= 1000 ? String(format: "%.1f", width / 1000) : "500", size: 8)
+    private func hzText(_ hz: Double) -> String {
+        if hz >= 1000 {
+            let khz = hz / 1000
+            return khz == khz.rounded() ? String(format: "%.0fk", khz) : String(format: "%gk", khz)
+        }
+        return String(format: "%.0f", hz)
+    }
+
+    private var shortwaveBands: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                HardwareKey(lit: !hamBands, led: Rig.lcd, action: { hamBands = false }) { EngravedLabel(text: "BROADCAST", size: 8) }
+                HardwareKey(lit: hamBands, led: Rig.lcd, action: { hamBands = true }) { EngravedLabel(text: "HAM", size: 8) }
+            }
+            .frame(height: 30)
+            LazyVGrid(columns: keyGrid(6), spacing: 4) {
+                if hamBands {
+                    ForEach(HamBand.all.filter { $0.voice < 30 }) { band in
+                        HardwareKey(lit: isOn(band), led: Rig.lcd, action: { onair_sw_tune_khz(band.voice * 1000); receiver.refresh() }) {
+                            EngravedLabel(text: band.name, size: 10)
+                        }
+                        .frame(height: 30)
+                    }
+                } else {
+                    ForEach(shortwave.bands) { band in
+                        HardwareKey(lit: abs(receiver.status.mhz * 1000 - band.khz) < 300, led: Rig.lcd, action: { onair_sw_tune_khz(band.khz); receiver.refresh() }) {
+                            EngravedLabel(text: band.name, size: 8)
+                        }
+                        .frame(height: 30)
+                    }
+                }
+            }
+        }
+    }
+
+    private var shortwaveDemods: some View {
+        LazyVGrid(columns: keyGrid(4), spacing: 4) {
+            ForEach([VoiceMode.am, .usb, .lsb, .cw]) { mode in
+                HardwareKey(lit: Int32(general.demod) == mode.demod, led: .green, action: { select(voice: mode) }) {
+                    EngravedLabel(text: mode.rawValue, size: 9)
+                }
+                .frame(height: 30)
+            }
+        }
+    }
+
+    private var decoderKeys: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                EngravedLabel(text: "DECODERS", size: 8)
+                Spacer()
+                HardwareKey(lit: shortwave.auto, led: .green, action: { onair_sw_auto(!shortwave.auto) }) { EngravedLabel(text: "AUTO", size: 8) }
+                    .frame(width: 62, height: 28)
+                HardwareKey(action: { onair_sw_stop_all() }) { EngravedLabel(text: "NONE", size: 8) }
+                    .frame(width: 62, height: 28)
+                if shortwave.decoders.contains(where: { $0.on && $0.picture }) {
+                    HardwareKey(action: { showPicture = true }) { EngravedLabel(text: "PICTURE", size: 8) }
+                        .frame(width: 66, height: 28)
+                }
+            }
+            ForEach(Self.decoderGroups, id: \.self) { group in
+                let keys = shortwave.decoders.filter { $0.group == group }
+                if !keys.isEmpty {
+                    EngravedLabel(text: group.uppercased(), size: 7)
+                    LazyVGrid(columns: keyGrid(4), spacing: 4) {
+                        ForEach(keys) { decoder in
+                            HardwareKey(lit: decoder.on, led: .green, action: { onair_sw_press(decoder.id) }) {
+                                EngravedLabel(text: decoder.name.uppercased(), size: 7)
+                            }
+                            .frame(height: 30)
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// What each running decoder last produced.
+    private var decodedText: some View {
+        let table = results.tables?.first { $0.name == "Decoders" }
+        let name = table?.cols.firstIndex(of: "Decoder"), state = table?.cols.firstIndex(of: "State"), text = table?.cols.firstIndex(of: "Text")
+        return GlassWindow(corner: 6) {
+            VStack(alignment: .leading, spacing: 3) {
+                if let table, let name, let state, let text, !table.rows.isEmpty {
+                    ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                        Text("\(row[name])  \(row[state])  \(row[text])")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Rig.lcd)
+                            .lineLimit(3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    Text(receiver.status.running ? "Press a decoder or AUTO" : "Press power to start")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Rig.lcd.opacity(0.7))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    /// The widths the core offers for this demodulator.
+    private var filters: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                EngravedLabel(text: "FILTER", size: 8)
+                Text(general.width >= 1000 ? String(format: "%g kHz", general.width / 1000) : String(format: "%.0f Hz", general.width))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Rig.lcd)
+                Spacer()
                 Text(general.squelchOpen ? "SIGNAL" : "SQUELCH CLOSED").font(.system(size: 10, design: .monospaced)).foregroundStyle(Rig.lcd.opacity(0.65))
             }
-            .padding(9)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            LazyVGrid(columns: keyGrid(6), spacing: 4) {
+                ForEach(general.presets, id: \.self) { width in
+                    HardwareKey(lit: abs(general.width - width) < 1, led: Rig.lcd, action: { onair_general_set(Int32(general.demod), width) }) {
+                        EngravedLabel(text: hzText(width), size: 8)
+                    }
+                    .frame(height: 30)
+                }
+            }
+        }
+    }
+
+    private var tuning: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                EngravedLabel(text: "TUNING STEP", size: 8)
+                LazyVGrid(columns: keyGrid(3), spacing: 4) {
+                    ForEach(Self.steps, id: \.self) { step in
+                        HardwareKey(lit: stepHz == step, led: Rig.lcd, action: { stepHz = step }) {
+                            EngravedLabel(text: hzText(step), size: 8)
+                        }
+                        .frame(height: 30)
+                    }
+                }
+            }
+            TuningKnob(stepsPerTurn: 40) { steps in
+                onair_spectrum_scrub(receiver.status.mhz + Double(steps) * stepHz / 1e6)
+                receiver.refresh()
+            }
+            .frame(width: 96, height: 96)
         }
     }
 
@@ -223,7 +398,8 @@ struct HamPage: View {
 
     private func load() {
         if let text = onair_general_json(), let new = try? JSONDecoder().decode(General.self, from: Data(String(cString: text).utf8)) { general = new }
-        if !isVoice, let text = onair_results_json() {
+        if isShortwave, let text = onair_sw_json(), let new = try? JSONDecoder().decode(Shortwave.self, from: Data(String(cString: text).utf8)) { shortwave = new }
+        if !isVoice || isShortwave, let text = onair_results_json() {
             do {
                 results = try JSONDecoder().decode(DecodeTable.self, from: Data(String(cString: text).utf8))
             } catch {
