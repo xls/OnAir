@@ -220,6 +220,7 @@ struct RootView: View {
             tab = .mode
         case "spectrum": tab = .spectrum
         case "mode": tab = .mode
+        case "modelist": devicePage = .mode
         default: devicePage = DevicePage.allCases.first { $0.rawValue.lowercased() == args[i + 1] } ?? .source
         }
     }
@@ -233,7 +234,31 @@ struct StatusStrip: View {
     /// Internet TV comes over the network: there is no radio to power or tune.
     private var isStream: Bool { receiver.status.family == OnAirFamily.internetTV }
 
+    /// Why POWER did not start the radio, with what to do when the radio cannot reach the frequency.
+    private var refusal: String {
+        let error = receiver.status.error
+        return error.contains("refused") ? "\(error). This radio needs an up-converter to receive here, or use a network HF radio such as a KiwiSDR." : error
+    }
+
     var body: some View {
+        VStack(spacing: 0) {
+            strip
+            if !receiver.status.error.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(RadioTheme.amber)
+                    Text(refusal)
+                        .font(.footnote)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(red: 0.32, green: 0.08, blue: 0.06))
+            }
+        }
+    }
+
+    private var strip: some View {
         ZStack {
             BrushedMetal(tone: 0.46)
             HStack(spacing: 10) {

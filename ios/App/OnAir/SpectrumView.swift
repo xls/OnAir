@@ -331,11 +331,17 @@ struct SpectrumPage: View {
 
     private var axis: some View {
         HStack {
-            Text(String(format: "%.3f", spectrum.lowHz / 1e6))
-            Spacer()
-            Text(String(format: "%.3f MHz", spectrum.frequency(atFraction: 0.5) / 1e6))
-            Spacer()
-            Text(String(format: "%.3f", spectrum.highHz / 1e6))
+            if receiver.status.running {
+                Text(String(format: "%.3f", spectrum.lowHz / 1e6))
+                Spacer()
+                Text(String(format: "%.3f MHz", spectrum.frequency(atFraction: 0.5) / 1e6))
+                Spacer()
+                Text(String(format: "%.3f", spectrum.highHz / 1e6))
+            } else {  // no capture, so no span: only where it is tuned
+                Spacer()
+                Text(String(format: "%.3f MHz", receiver.status.mhz))
+                Spacer()
+            }
         }
         .font(.caption2.monospacedDigit())
         .foregroundStyle(.secondary)

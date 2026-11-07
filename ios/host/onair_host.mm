@@ -157,6 +157,7 @@ void pageBody(App& a, ImVec2) {
 }   // namespace
 
 static std::string gNetPassword;
+static bool gStartTried = false;   // the last thing asked of POWER was to start: its refusal is shown until something changes
 
 extern "C" {
 
@@ -300,10 +301,11 @@ int onair_keyboard_kind(void) {
 
 void onair_start_stop(void) {
     App& a = appRunApp();
+    gStartTried = !a.engine.running();
     if (a.engine.running()) a.engine.stop(); else startReceiver(a);
 }
 
-void onair_tune_mhz(double mhz) { tuneFreq(appRunApp(), mhz); }
+void onair_tune_mhz(double mhz) { gStartTried = false; tuneFreq(appRunApp(), mhz); }
 
 void onair_set_volume(float volume, bool muted) {
     App& a = appRunApp();
@@ -317,6 +319,7 @@ int onair_device_selected(void) { return appRunApp().devIdx; }
 void onair_device_select(int i) {
     App& a = appRunApp();
     if (i == a.devIdx || i < 0 || i >= (int)a.devices.size()) return;
+    gStartTried = false;
     const bool wasRunning = a.engine.running();
     if (wasRunning) a.engine.stop();
     a.devIdx = i;
@@ -330,7 +333,7 @@ const char* onair_mode_group(int i) { const int g = kModes[i].group; return g >=
 const char* onair_mode_blurb(int i) { return kModes[i].blurb ? kModes[i].blurb : ""; }
 int onair_mode_family(int i) { return kModes[i].family; }
 bool onair_mode_is_selected(int i) { return modeSelected(appRunApp(), kModes[i]); }
-void onair_mode_select(int i) { selectMode(appRunApp(), kModes[i].family, kModes[i].subId); }
+void onair_mode_select(int i) { gStartTried = false; selectMode(appRunApp(), kModes[i].family, kModes[i].subId); }
 
 bool onair_spectrum(float* bins, int n, double* meta) {
     App& a = appRunApp();
@@ -864,7 +867,7 @@ const char* onair_status_json(void) {
     const std::string source = a.devIdx >= 0 && a.devIdx < (int)a.devices.size() ? a.devices[(size_t)a.devIdx].name : "";
     gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
               dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +
-              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + "}";
+              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
     return gStatus.c_str();
 }
 

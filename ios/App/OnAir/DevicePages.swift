@@ -66,6 +66,16 @@ struct ModeBrowser: View {
     }
 
     var body: some View {
+        ScrollViewReader { scroller in
+            list
+                .onAppear {
+                    guard query.isEmpty, let current = Self.rows.first(where: { onair_mode_is_selected($0.id) }) else { return }
+                    DispatchQueue.main.async { scroller.scrollTo(current.id, anchor: .center) }  // once it is laid out
+                }
+        }
+    }
+
+    private var list: some View {
         PanelPage {
             GlassWindow(corner: 6) {
                 HStack {
@@ -113,6 +123,7 @@ struct ModeBrowser: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .id(row.id)
                     }
                 }
             }
