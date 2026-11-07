@@ -47,7 +47,7 @@ Last full sweep: 183 of 183 modes start and none crashes.
 | Messaging | Meshtastic and POCSAG; transmit checked into IQ files | Never sent on air |
 | Navigation and maritime | DGPS, Loran-C and Marine VHF from recordings | DME has no test input |
 | Recordings | Record, replay with the mode restored | Import through the Files picker |
-| Radio | Antenna RX1 or RX2 on the E310, proven by gain and SNR on the iPhone | Antenna row on the Source page seen on the iPhone |
+| Radio | Antenna RX1 or RX2 on the E310, proven by gain and SNR on the iPhone. Ham It Up per antenna on the Source page: the switches, the frequency arithmetic and the band keys were checked without streaming | Receiving through a real up-converter |
 
 SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. HF ID, ASTERIX, Custom decoders and Add-ons have no test input.
 

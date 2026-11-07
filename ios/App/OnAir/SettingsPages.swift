@@ -344,11 +344,16 @@ private struct ConverterSection: View {
     @FocusState private var typing: Bool
 
     private var current: State.Preset? { state.presets.first { $0.id == state.id } }
+    /// The list has the whole name; the row only room for the first words of it.
+    private var shortName: String {
+        let name = current?.name ?? "None"
+        return String((name.split(separator: "(").first ?? "").split(separator: "/").first ?? "").trimmingCharacters(in: .whitespaces)
+    }
 
     var body: some View {
         PanelSection(title: "Frequency converter") {
             PanelRow(label: "Converter", help: "Fit one to reach below 70 MHz. Tune the frequency at the antenna; the radio is moved for you.") {
-                SelectorWindow(selected: current?.name ?? "None", options: state.presets.map(\.name)) { index in
+                SelectorWindow(selected: shortName, options: state.presets.map(\.name)) { index in
                     onair_converter_set(state.presets[index].id, Double(entry) ?? 125)
                     load()
                 }

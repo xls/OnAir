@@ -328,6 +328,7 @@ static void remember(const char* text, const char* end = nullptr) {
     if (!gOn) return;
     const std::string t = end ? std::string(text, end) : std::string(text);
     if (gInTooltip) {
+        if (gCombo >= 0) return;   // the tooltip of one choice in a list, not of the control
         if (!gItems.empty() && gItems.back().help.size() < 240) gItems.back().help += (gItems.back().help.empty() ? "" : " ") + t;
         return;
     }

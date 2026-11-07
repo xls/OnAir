@@ -180,7 +180,19 @@ struct RootView: View {
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--fake-guide") { onair_fake_guide() }
+        if let host = value("--add-radio") {
+            onair_net_connect(0, host, 0)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSLog("OnAirVerify added busy=%d error=%s", onair_net_busy() ? 1 : 0, onair_net_error()) }
+        }
         if let converter = value("--converter") { onair_converter_set(converter, 125) }
+        if args.contains("--dump-radio") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                let text = "\(String(cString: onair_rate_json()).prefix(150))\n\(String(cString: onair_converter_json()).prefix(80))\n\(receiver.status.source) \(String(cString: onair_radio_settings_json()).suffix(200))"
+                try? text.write(to: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("radio.txt"), atomically: true, encoding: .utf8)
+            }
+        }
+        if let antenna = value("--upconverter") { onair_antenna_converter_set(antenna, true) }
+        if let antenna = value("--no-upconverter") { onair_antenna_converter_set(antenna, false) }
         if let antenna = value("--antenna") { onair_radio_setting_set("antenna", antenna) }
         if args.contains("--scopes") {
             UserDefaults.standard.set("L / R", forKey: "scopeLeft")

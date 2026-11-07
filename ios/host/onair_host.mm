@@ -907,7 +907,8 @@ void onair_dc_mode_set(int mode) {
 const char* onair_converter_json(void) {
     App& a = appRunApp();
     const auto setting = [&](const char* key, const char* fallback) { const auto it = a.tune.radio.find(key); return it != a.tune.radio.end() ? it->second : std::string(fallback); };
-    gJson = "{\"id\":" + quoted(setting(dect2::convKeyPreset(), "none")) + ",\"lo\":" + quoted(setting(dect2::convKeyLo(), "125")) + ",\"presets\":[";
+    gJson = "{\"id\":" + quoted(setting(dect2::convKeyPreset(), "none")) + ",\"lo\":" + quoted(setting(dect2::convKeyLo(), "125")) + ",\"rx1\":" + (setting("conv.rx1", "") == "hamitup" ? "true" : "false") +
+            ",\"rx2\":" + (setting("conv.rx2", "") == "hamitup" ? "true" : "false") + ",\"presets\":[";
     bool first = true;
     for (const dect2::ConverterPreset& p : dect2::converterPresets()) {
         gJson += std::string(first ? "" : ",") + "{\"id\":" + quoted(p.id) + ",\"name\":" + quoted(p.name) + ",\"custom\":" + (p.custom ? "true" : "false") + "}";
@@ -917,10 +918,32 @@ const char* onair_converter_json(void) {
     return gJson.c_str();
 }
 
+// Each antenna keeps its own converter: "conv.rx1" and "conv.rx2" name the preset of that antenna
+static std::string antennaKey(const App& a) {
+    const auto it = a.tune.radio.find("antenna");
+    return "conv." + (it != a.tune.radio.end() ? it->second : std::string("rx1"));
+}
+
+static void applyAntennaConverter(App& a) {
+    const auto it = a.tune.radio.find(antennaKey(a));
+    if (it == a.tune.radio.end() || it->second == "none") a.tune.radio.erase(dect2::convKeyPreset());
+    else a.tune.radio[dect2::convKeyPreset()] = it->second;
+}
+
+void onair_antenna_converter_set(const char* antenna, bool hamItUp) {
+    App& a = appRunApp();
+    const std::string key = std::string("conv.") + antenna;
+    if (hamItUp) a.tune.radio[key] = "hamitup"; else a.tune.radio.erase(key);
+    applyAntennaConverter(a);
+    saveRadioSettings(a);
+    if (a.engine.running()) startReceiver(a);
+}
+
 void onair_converter_set(const char* id, double loMhz) {
     App& a = appRunApp();
     const dect2::ConverterPreset* p = dect2::findConverterPreset(id);
     if (!p) return;
+    if (std::string(p->id) == "none") a.tune.radio.erase(antennaKey(a)); else a.tune.radio[antennaKey(a)] = p->id;
     a.tune.radio.erase(dect2::convKeyLo());
     a.tune.radio.erase(dect2::convKeyMode());
     if (std::string(p->id) == "none") a.tune.radio.erase(dect2::convKeyPreset()); else a.tune.radio[dect2::convKeyPreset()] = p->id;
@@ -956,6 +979,7 @@ void onair_radio_setting_set(const char* key, const char* value) {
     for (const dect2::RadioSetting& r : d.settings) {
         if (r.key != key) continue;
         a.tune.radio[r.key] = value;
+        if (r.key == "antenna") applyAntennaConverter(a);
         saveRadioSettings(a);
         if (!a.engine.running()) return;
         if (r.restart) startReceiver(a); else a.engine.retune(a.tune);

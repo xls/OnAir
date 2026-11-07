@@ -6,6 +6,7 @@ struct SourcePage: View {
     let receiver: Receiver
     @State private var showAdd = false
     @State private var antenna: Setting?
+    @State private var upconverters = Upconverters()
 
     var body: some View {
         PanelPage {
@@ -34,6 +35,14 @@ struct SourcePage: View {
                             loadAntenna()
                         }
                     }
+                    ForEach(Array(zip(antenna.values, antenna.names)), id: \.0) { value, name in
+                        PanelRow(label: "Ham It Up on \(name)", help: "A 125 MHz up-converter on this antenna: reaches HF, and you still tune the frequency at the antenna.") {
+                            RockerSwitch(isOn: Binding(get: { value == "rx1" ? upconverters.rx1 : upconverters.rx2 }, set: { on in
+                                onair_antenna_converter_set(value, on)
+                                loadAntenna()
+                            }))
+                        }
+                    }
                 }
             }
             HardwareKey(action: { showAdd = true }) {
@@ -55,9 +64,15 @@ struct SourcePage: View {
         let values, names: [String]
     }
 
+    private struct Upconverters: Decodable {
+        var rx1 = false
+        var rx2 = false
+    }
+
     private func loadAntenna() {
         guard let text = onair_radio_settings_json() else { return }
         antenna = (try? JSONDecoder().decode([Setting].self, from: Data(String(cString: text).utf8)))?.first { $0.key == "antenna" }
+        if let json = onair_converter_json(), let new = try? JSONDecoder().decode(Upconverters.self, from: Data(String(cString: json).utf8)) { upconverters = new }
     }
 }
 
