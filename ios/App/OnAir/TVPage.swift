@@ -14,6 +14,7 @@ struct ScannedMux: Identifiable, Codable {
     struct Channel: Codable {
         let name: String
         let lcn: Int
+        var radio: Bool?
     }
 
     var id: Double { mhz }
@@ -23,7 +24,12 @@ struct ScannedMux: Identifiable, Codable {
     let names: [String]
     var channels: [Channel]?   // scans before this was kept have the names only
 
-    var allChannels: [Channel] { channels ?? names.map { Channel(name: $0, lcn: 0) } }
+    /// Stations send the same programme under one name several times (SD and HD, spares): each name once, with the lowest number.
+    var allChannels: [Channel] {
+        var seen = Set<String>()
+        let all = channels ?? names.map { Channel(name: $0, lcn: 0) }
+        return all.sorted { ($0.lcn == 0 ? 9999 : $0.lcn) < ($1.lcn == 0 ? 9999 : $1.lcn) }.filter { seen.insert($0.name).inserted }
+    }
     static func saved(_ text: String) -> [ScannedMux] { (try? JSONDecoder().decode([ScannedMux].self, from: Data(text.utf8))) ?? [] }
 }
 
@@ -33,6 +39,7 @@ struct TVState: Decodable {
         let name, provider, type, now, next: String
         let lcn: Int
         let scrambled: Bool
+        var isRadio: Bool { type.localizedCaseInsensitiveContains("radio") }
     }
 
     var selected = -1
@@ -46,6 +53,13 @@ struct TVState: Decodable {
     var fps = 0.0
     var hardware = false
     var services: [Service] = []
+
+    /// Each name once, lowest number first: see ScannedMux.allChannels.
+    var uniqueServices: [Service] {
+        var seen = Set<String>()
+        let ordered = services.sorted { ($0.lcn == 0 ? 9999 : $0.lcn) < ($1.lcn == 0 ? 9999 : $1.lcn) }
+        return ordered.filter { seen.insert($0.name.isEmpty ? "\($0.id)" : $0.name).inserted }
+    }
 }
 
 func tvDecode<T: Decodable>(_ type: T.Type, _ text: UnsafePointer<CChar>?) -> T? {
@@ -475,6 +489,7 @@ private struct ChannelList: View {
         let lcn: Int
         var service: TVState.Service?
         var mux: ScannedMux?
+        var radio = false
     }
 
     private struct Group: Identifiable {
@@ -488,6 +503,7 @@ private struct ChannelList: View {
     let state: TVState
     @AppStorage("tvFound") private var foundText = "[]"
     @State private var tuning: String?
+    @State private var tuningName = ""
     @State private var problem = ""
 
     private func name(_ service: TVState.Service) -> String { service.name.isEmpty ? "Service \(service.id)" : service.name }
@@ -498,24 +514,25 @@ private struct ChannelList: View {
 
     /// One group for each frequency. Channels of the frequency being received show what is on.
     private var groups: [Group] {
-        var left = state.services
+        var left = state.uniqueServices
         var out: [Group] = []
+        func liveRow(_ service: TVState.Service) -> Row { Row(id: "live\(service.id)", name: name(service), lcn: service.lcn, service: service, radio: service.isRadio) }
         for mux in ScannedMux.saved(foundText).sorted(by: { $0.mhz < $1.mhz }) {
             let tuned = abs(mux.mhz - receiver.status.mhz) < 0.1
             var rows: [Row] = mux.allChannels.map { channel in
                 let index = tuned ? left.firstIndex { name($0) == channel.name } : nil
                 let service = index.map { left.remove(at: $0) }
-                return Row(id: "\(mux.mhz)-\(channel.name)", name: channel.name, lcn: service?.lcn ?? channel.lcn, service: service, mux: mux)
+                return Row(id: "\(mux.mhz)-\(channel.name)", name: channel.name, lcn: service?.lcn ?? channel.lcn, service: service, mux: mux, radio: service?.isRadio ?? channel.radio ?? false)
             }
             if tuned {   // on the air now but not there when it was scanned
-                rows += left.map { Row(id: "live\($0.id)", name: name($0), lcn: $0.lcn, service: $0) }
+                rows += left.map(liveRow)
                 left = []
             }
-            out.append(Group(title: String(format: "%@ · %.3f MHz", mux.label, mux.mhz), tuned: tuned, rows: ordered(rows)))
+            let label = Int(mux.label) == nil ? mux.label : "Channel \(mux.label)"
+            out.append(Group(title: String(format: "%@ · %.3f MHz", label, mux.mhz), tuned: tuned, rows: ordered(rows)))
         }
         if !left.isEmpty {
-            let rows = left.map { Row(id: "live\($0.id)", name: name($0), lcn: $0.lcn, service: $0) }
-            out.insert(Group(title: String(format: "%.3f MHz", receiver.status.mhz), tuned: true, rows: ordered(rows)), at: 0)
+            out.insert(Group(title: String(format: "%.3f MHz", receiver.status.mhz), tuned: true, rows: ordered(left.map(liveRow))), at: 0)
         }
         return out
     }
@@ -550,16 +567,20 @@ private struct ChannelList: View {
     private func label(_ row: Row) -> some View {
         let selected = row.service?.id == state.selected && row.service != nil
         return HStack(spacing: 12) {
-            Text(row.lcn > 0 ? String(row.lcn) : "—")
-                .font(.title3.monospacedDigit().weight(.semibold))
-                .frame(width: 46)
-                .foregroundStyle(TV.accent)
+            if row.radio {
+                Image(systemName: "radio").foregroundStyle(.secondary).frame(width: 34)
+            } else if row.lcn > 0 {
+                Text(String(row.lcn))
+                    .font(.title3.monospacedDigit().weight(.semibold))
+                    .frame(width: 34)
+                    .foregroundStyle(TV.accent)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name).font(.body.weight(.medium)).foregroundStyle(.white).lineLimit(1)
                 detail(row).frame(height: 15, alignment: .leading)   // always there, so a row never changes height as its details arrive
             }
             Spacer()
-            if tuning == row.name { ProgressView().controlSize(.small) }
+            if tuning == row.id { ProgressView().controlSize(.small) }
             if row.service?.scrambled == true { Image(systemName: "lock.fill").foregroundStyle(.secondary) }
             if selected { Image(systemName: "play.fill").foregroundStyle(TV.accent) }
         }
@@ -569,7 +590,7 @@ private struct ChannelList: View {
     }
 
     @ViewBuilder private func detail(_ row: Row) -> some View {
-        if tuning == row.name {
+        if tuning == row.id {
             Text("Tuning…").font(.caption).foregroundStyle(.secondary)
         } else if let service = row.service {
             if service.now.isEmpty {
@@ -589,13 +610,14 @@ private struct ChannelList: View {
             return
         }
         guard let mux = row.mux else { return }
-        tuning = row.name
+        tuning = row.id
+        tuningName = row.name
         onair_channel_pick(mux.mhz, mux.bandwidth)
         if !receiver.status.running { receiver.startStop() }
         receiver.refresh()
         playWhenFound()
         DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
-            guard tuning == row.name else { return }
+            guard tuning == row.id else { return }
             tuning = nil
             problem = "\(row.name) did not appear on \(mux.label). The signal may be too weak."
         }
@@ -603,7 +625,7 @@ private struct ChannelList: View {
 
     /// The new frequency's channels take a few seconds to arrive.
     private func playWhenFound() {
-        guard let wanted = tuning, let service = state.services.first(where: { name($0) == wanted }) else { return }
+        guard tuning != nil, let service = state.uniqueServices.first(where: { name($0) == tuningName }) else { return }
         tuning = nil
         onair_tv_play(Int32(service.id))
     }
@@ -714,6 +736,7 @@ private struct ScanView: View {
     @State private var index: Int?
     @State private var dwell = 0
     @State private var tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private static let settleSeconds = 12
     private static let dwellSeconds = 6
 
     private var found: [ScannedMux] { ScannedMux.saved(foundText) }
@@ -804,13 +827,16 @@ private struct ScanView: View {
         guard let current = index, plan.channels.indices.contains(current) else { return }
         dwell += 1
         let channel = plan.channels[current]
-        if !state.services.isEmpty && dwell >= 3 {
+        // names come first, the channel numbers later: stay until they are in, or give up and keep what there is
+        let named = !state.services.isEmpty && state.services.allSatisfy { !$0.name.isEmpty }
+        let numbered = state.services.contains { $0.lcn > 0 }
+        if !state.services.isEmpty && ((named && numbered && dwell >= 3) || dwell >= Self.settleSeconds) {
             var list = found
             list.removeAll { $0.mhz == channel.mhz }
-            list.append(ScannedMux(mhz: channel.mhz, label: channel.label, bandwidth: channel.bandwidth, names: state.services.map { $0.name.isEmpty ? "Service \($0.id)" : $0.name }, channels: state.services.map { ScannedMux.Channel(name: $0.name.isEmpty ? "Service \($0.id)" : $0.name, lcn: $0.lcn) }))
+            list.append(ScannedMux(mhz: channel.mhz, label: channel.label, bandwidth: channel.bandwidth, names: state.services.map { $0.name.isEmpty ? "Service \($0.id)" : $0.name }, channels: state.services.map { ScannedMux.Channel(name: $0.name.isEmpty ? "Service \($0.id)" : $0.name, lcn: $0.lcn, radio: $0.isRadio) }))
             if let data = try? JSONEncoder().encode(list) { foundText = String(decoding: data, as: UTF8.self) }
             advance(from: current)
-        } else if dwell >= Self.dwellSeconds {
+        } else if state.services.isEmpty && dwell >= Self.dwellSeconds {
             advance(from: current)
         }
     }

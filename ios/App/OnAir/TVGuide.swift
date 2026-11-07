@@ -32,6 +32,8 @@ struct TVGuide: View {
     private static var dayWidth: CGFloat { 24 * 60 * perMinute }
     private static let calendar = Calendar.current
 
+    private var services: [TVState.Service] { state.uniqueServices.filter { !$0.isRadio } }
+
     private var dayStart: Date { Self.calendar.date(byAdding: .day, value: day, to: Self.calendar.startOfDay(for: now)) ?? now }
 
     private var lastDay: Int {
@@ -64,7 +66,7 @@ struct TVGuide: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
             }
-            if state.services.isEmpty {
+            if services.isEmpty {
                 message("Waiting for channels…")
             } else if events.values.allSatisfy(\.isEmpty) {
                 message("Waiting for the guide. Stations send it every few seconds to a few minutes.")
@@ -83,7 +85,7 @@ struct TVGuide: View {
     }
 
     private var grid: some View {
-        let height = Self.headerHeight + CGFloat(state.services.count) * Self.rowHeight
+        let height = Self.headerHeight + CGFloat(services.count) * Self.rowHeight
         return ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
                     // half an hour of the past stays in view
@@ -129,7 +131,7 @@ struct TVGuide: View {
 
     private var channels: some View {
         VStack(spacing: 0) {
-            ForEach(state.services) { service in
+            ForEach(services) { service in
                 Button {
                     onair_tv_play(Int32(service.id))
                 } label: {
@@ -150,7 +152,7 @@ struct TVGuide: View {
     private var rows: some View {
         let start = Int64(dayStart.timeIntervalSince1970), end = start + 86400
         return VStack(spacing: 0) {
-            ForEach(state.services) { service in
+            ForEach(services) { service in
                 ZStack(alignment: .topLeading) {
                     Color.clear
                     ForEach((events[service.id] ?? []).filter { $0.end > start && $0.start < end }) { event in
