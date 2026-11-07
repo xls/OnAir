@@ -5,53 +5,44 @@ Pluto. USB radios are not possible on iOS. Receive and transmit, and all of OnAi
 
 ## Approach
 
-Keep the code. `core/` and `rust/` (DSP, decoders, engine) and the C++ ImGui views in `app/` all stay. ImGui draws through its Metal backend
-(already in the repo and already the macOS default) into one Metal view. SwiftUI adds only the navigation around it: the status strip, the
-bottom bar, the page chips and native sheets.
+Keep the code. `core/` and `rust/` (DSP, decoders, engine) and `app/` (mode logic, rate planning, the desktop panels) all stay and keep
+merging from upstream. Every screen the user sees is native SwiftUI and Metal, in a hardware look; the ImGui panels run unseen only to
+feed the native settings drawers (see below). Swift reaches the C++ through the C API in `ios/host` (`ios/core/include/onair_host.h`).
 
 ```
-+----------------------------------+
-| SwiftUI  status strip            |  frequency, start/stop, level, mute: on every tab
-+----------------------------------+
-| SwiftUI  page chips              |  Source | Gain | Tuner | Mode | Display
-+----------------------------------+
-|                                  |
-| MTKView: one ImGui context       |  draws the C++ panel for the current page
-| sized to this slot               |
-|                                  |
-+----------------------------------+
-| SwiftUI  Device Spectrum FM Sett |  third tab is named after the mode
-+----------------------------------+
-        | ios/host C API: init, frame, touch, set page, list pages, state
-+----------------------------------+
-| app/ (ImGui views, unchanged     |  GLFW replaced by a small shim
-| where possible) + dect2core/Rust |  Pluto through a built-in iiod client
-+----------------------------------+
+SwiftUI screens (FM, TV, Ham, maps, texter ...)  +  Metal spectrum and waterfall
+        | ios/host C API: start, tune, status JSON, results, settings reflection
+app/ (mode logic, unseen ImGui panels)  +  dect2core / Rust
+        | network radios: Pluto (built-in iiod client), rtl_tcp and the others OnAir knows
 ```
 
 ## Status
 
-What was measured, on the simulator unless it says the iPhone. `tools/verify_all.py` runs every mode against OnAir's built-in test signal and logs what the decoder produced and what the screen shows. `tools/make_test_iq.cpp` writes SigMF recordings for modes with no built-in signal; copy them to `Documents/Recordings` and play them with `--iq <name>`.
+The app is named **Tuneit** on the phone (bundle ID `net.rizos.onair`); About credits OnAir. What was measured, on the simulator unless it says the iPhone or the user. `tools/verify_all.py` runs every mode against OnAir's built-in test signal and logs what the decoder produced and what the screen shows. `tools/make_test_iq.cpp` writes SigMF recordings for modes with no built-in signal; copy them to `Documents/Recordings` and play them with `--iq <name>`.
 
-Last full sweep: 183 of 183 modes start with the settings drawer open and none crashes, about 1,570 controls. `--option-sweep` changed 1,263 settings: 1,246 took; the rest are pick lists that retune, live filters and clamped numbers.
+Last full sweep: every mode starts with the settings drawer open and none crashes, about 1,570 controls. `--option-sweep` changed 1,263 settings: 1,246 took; the rest are pick lists that retune, live filters and clamped numbers. The mode list leaves out the desktop-only rows (Plugins, and Custom decoders from the Mode Builder).
 
 | Screen | Measured | Not yet done |
 |---|---|---|
-| FM | Real stations through the E310 on the iPhone, with scopes | Long listening test |
-| Spectrum | 60 fps on the iPhone; filter box; two-finger height from flat to just unclipped, checked by setting the range | |
-| TV | Real DVB-T channels scanned and watched on the iPhone (the user's check), with guide, tuning between frequencies and full screen. DVB-T picture and sound from the test signal; H.264 and MPEG-2 from files; automatic detection; Internet TV. Channel list by frequency, grid guide with made-up programmes, fit and zoom full screen | DVB-T2 video in the app |
-| Ham, Shortwave, General | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW; band keys and steps follow the demodulator | Below 70 MHz on the E310 needs a converter; never transmitted on air |
-| Broadcast | DAB+, DRM, AM and shortwave with audio from test signals. HD Radio locks | No sound for HD Radio (HDC) or CDR (DRA+): those codecs are not available |
-| Trackers | Real ADS-B aircraft on the iPhone through RX2. AIS, APRS, UAT and Horus from test signals. Target card with aircraft details from adsbdb | |
+| FM | Real stations through the E310 on the iPhone, with scopes, RDS name first on the display, scanned stations in the frequency drawer | |
+| Spectrum | 60 fps on the iPhone; filter box; a tap moves the cursor like a drag; two-finger height | |
+| TV | Real DVB-T channels scanned and watched on the iPhone (the user's check), with guide, tuning between frequencies and full screen. DVB-T2 and DVB-T picture and sound from the test signal; H.264 and MPEG-2 from files; automatic detection; Internet TV | DVB-T2 on air: Australia broadcasts DVB-T |
+| Ham, Shortwave, General | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW; band keys and steps follow the demodulator. HF through the Ham It Up on the E310 (the user's check) | Never transmitted on air (the user's call) |
+| Broadcast | DAB+ on the iPhone (the user's check); DRM, AM and shortwave with audio from test signals. HD Radio and CDR lock | No sound for HD Radio (HDC, USA) or CDR (DRA+, China): those codecs are not available. Neither is broadcast in Australia |
+| Trackers | Real ADS-B aircraft on the iPhone through RX2, target card with aircraft details from adsbdb (the user's check). AIS, APRS, UAT and Horus from test signals | |
 | Two-way | DMR, P25, NXDN, D-STAR, M17 and FreeDV with voice. Fusion, P25 Phase 2, MPT 1327, LTR and EDACS from recordings | Real systems |
 | Messaging | Meshtastic and POCSAG; transmit checked into IQ files | Never sent on air |
-| Navigation and maritime | DGPS, Loran-C and Marine VHF from recordings | DME has no test input |
+| Navigation and maritime | DGPS, Loran-C and Marine VHF from recordings | DME (aircraft distance beacons, 962 to 1213 MHz) has no test input |
 | Recordings | Record, replay with the mode restored | Import through the Files picker |
-| Radio | Antenna RX1 or RX2 on the E310, proven by gain and SNR on the iPhone. Ham It Up per antenna on the Source page, tried by the user with the real unit | |
+| Radio | Antenna RX1 or RX2 on the E310, remembered per mode, proven by gain and SNR on the iPhone. Ham It Up per antenna on the Source page (the user's check). rtl_tcp (the user's check) | |
 
-SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. HF ID, ASTERIX, Custom decoders and Add-ons have no test input.
+SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. HF ID and ASTERIX have no test input.
 
-Antenna is remembered per mode. Both reads the two receivers together and combines them (`dsp/diversity.h`): it ran on the E310 at 4 Msps with 99% of the samples arriving, about 57 dB on FM against about 52 on RX1 and 60 on RX2 with automatic gain moving, so no gain is proven yet. The Bearing drawer turns the phase between the receivers into an angle (`ios/host/bearing_host.cpp`); it read a stable 99% agreement, but the angle has not been checked against a known direction. Saved across restarts and checked: FM and DAB scans, antenna per mode. Aircraft lookups are kept for 30 days but have not been checked after a restart.
+Antenna "Both" (the two receivers combined) and the Bearing drawer were tried and removed: the user maps modes to one antenna instead. A saved "both" becomes RX1.
+
+rtl_tcp: a server may send its own rate whatever it is asked (OnAir's "Share my radio" does). The app measures what arrives (the middle of three one-second readings, after skipping two), snaps it to a standard rate, and keeps it with the radio as `serverRateHz`; the driver then always asks for that rate, so every mode starts at it. Checked with a fake server moving from 3.2 to 2.4 Msps: caught in about 8 s, then DAB started at 2.4 at once.
+
+Saved across restarts and checked: FM and DAB scans, antenna per mode.
 
 ## How mode settings reach the native drawers
 
@@ -126,10 +117,10 @@ Run on Xcode 27.1, iOS 27.1 SDK. UI prototype code is in `ios/spike/`.
 | Does `dect2core` build for iOS? | Yes, device and simulator. About 1,350 objects, 4 failed before small fixes. Rust built unchanged after the target mapping. | Built and linked |
 | Size? | About 28 MB linked and dead-stripped. Full build 4 to 7 minutes on 8 cores. | Measured |
 | Does the engine run? | Yes on the simulator with the RemoteIO backend (`core/src/audio/audioout_ios.mm`): synthetic FM locks at 52 dB SNR in stereo with RDS, and audio plays in real time. The miniaudio abort is gone. | Measured on simulator and iPhone 18 Pro Max; sound heard on the phone |
-| Does `app/` build? | 371 of 376 files compile unchanged with a GLFW shim first on the include path. The other 5 are platform files, replaced or guarded in the prototype. | Compiled, not linked |
+| Does `app/` build? | Yes, linked into the app with a GLFW shim; its panels run unseen to feed the native drawers. | Built and linked |
 | Metal rendering? | Real `gfx_metal.mm` with ImGui and NV12 video in an MTKView on the simulator. | Screenshot confirmed |
-| Full app, touch, keyboard, background audio, phone-width layout | Not run. | **Untested** |
-| Pluto or rtl_tcp against a real radio | Not run. | **Untested** |
+| Full app, touch, keyboard, background audio, phone-width layout | Used daily on the iPhone 18 Pro Max. | Measured on the iPhone |
+| Pluto or rtl_tcp against a real radio | ANTSDR E310 (as a Pluto) over Wi-Fi, and rtl_tcp, on the iPhone. | Measured on the iPhone |
 
 ## Navigation
 

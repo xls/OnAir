@@ -190,6 +190,8 @@ protected:
             want = s.rateChosen && s.sampleRate > 0 ? s.sampleRate : std::min(s.sampleRate > 0 ? s.sampleRate : 2.048e6, 2.56e6);   // a real RTL-SDR drops samples above 2.56 Msps (unless the user chose the rate)
             if (want < 900001 && (want > 300000 || want <= 225000)) want = 900001;
         }
+        // a server found to send its own rate whatever it is asked (the iOS app measures it and keeps it as "serverRateHz"): ask for that one
+        if (const double pinned = radioNumber(s, "serverRateHz", 0); pinned > 0) want = pinned;
         const uint32_t rate = (uint32_t)std::lround(want);
         bool ok = true;
         if (rate != sentRate_) { ok = ok && command(kCmdRate, rate); sentRate_ = rate; rate_ = rate; }

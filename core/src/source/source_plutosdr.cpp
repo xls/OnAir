@@ -1,15 +1,10 @@
 // Native driver for the PlutoSDR: the radio's own library is loaded at run time when it is installed. See native_common.h.
-#include "dect2/dsp/diversity.h"
 #include "dect2/engine/rate_choice.h"
 #include "native_common.h"
-#include <atomic>
 #include <cerrno>
 #include <map>
 
 namespace dect2 {
-// both receivers' samples as they arrive, when read together: for a phase comparison (ios/host/bearing_host.cpp)
-std::atomic<void (*)(const cf32*, const cf32*, size_t)> gPlutoDualTap{nullptr};
-
 namespace native {
 
 
@@ -285,23 +280,16 @@ protected:
         phy_ = radio_->phy;
         rx_ = iio().context_find_device(ctx_, "cf-ad9361-lpc");
         if (!phy_ || !rx_) { err = "PlutoSDR: the AD9361 devices were not found"; return false; }
-        // The second receiver of a 2R image (ANTSDR E310, Pluto+): its own gain channel and the next I/Q pair of the converter. They share the LO.
-        // "both": the two are read together and combined (dsp/diversity.h) into the one stream the engine sees.
-        const std::string antenna = radioOption(s, "antenna", "rx1");
-        const bool second = antenna == "rx2";
-        both_ = antenna == "both";
+        // the second receiver of a 2R image (ANTSDR E310, Pluto+): its own gain channel and the next I/Q pair of the converter; they share the LO
+        const bool second = radioOption(s, "antenna", "rx1") == "rx2";
         rxCh_ = iio().device_find_channel(phy_, second ? "voltage1" : "voltage0", false);
-        rxCh2_ = both_ ? iio().device_find_channel(phy_, "voltage1", false) : nullptr;
         lo_ = iio().device_find_channel(phy_, "altvoltage0", true);
         i_ = iio().device_find_channel(rx_, second ? "voltage2" : "voltage0", false);
         q_ = iio().device_find_channel(rx_, second ? "voltage3" : "voltage1", false);
-        IioApi::iio_channel* otherI = iio().device_find_channel(rx_, second ? "voltage0" : "voltage2", false);
-        IioApi::iio_channel* otherQ = iio().device_find_channel(rx_, second ? "voltage1" : "voltage3", false);
-        if ((second && (!i_ || !q_)) || (both_ && (!rxCh2_ || !otherI || !otherQ))) { err = "PlutoSDR: this radio has one receiver: choose RX1"; openFailure_ = OpenFailure::Final; return false; }
+        if (second && (!i_ || !q_)) { err = "PlutoSDR: this radio has one receiver: choose RX1"; openFailure_ = OpenFailure::Final; return false; }
         if (!rxCh_ || !lo_ || !i_ || !q_) { err = "PlutoSDR: the receive channels were not found"; return false; }
-        i2_ = both_ ? otherI : nullptr;
-        q2_ = both_ ? otherQ : nullptr;
-        if (!both_) for (IioApi::iio_channel* c : {otherI, otherQ}) if (c) iio().channel_disable(c);   // the context is shared and remembers what was enabled
+        for (const char* other : {second ? "voltage0" : "voltage2", second ? "voltage1" : "voltage3"})   // the context is shared and remembers what was enabled
+            if (IioApi::iio_channel* c = iio().device_find_channel(rx_, other, false)) iio().channel_disable(c);
         gainMode_.clear();
         fw_.clear(); tezuka_ = false;
         if (iio().context_get_attr_value) {
@@ -367,7 +355,7 @@ protected:
             if (!firOn_ && !radio_->tx)
                 if (const int r = iio().channel_attr_write_longlong(rxCh_, "sampling_frequency", (long long)std::llround(want)); r != 0) { err = "PlutoSDR: the sample rate was refused: " + iio().text(r); return false; }
             // Tezuka: with only the first channel enabled the FPGA sends 8-bit I/Q pairs (half the bytes on the cable, twice the rate); both: 16-bit
-            cs8_ = tezuka_ && !both_ && radioOption(s, "iqformat", "cs16") == "cs8";
+            cs8_ = tezuka_ && radioOption(s, "iqformat", "cs16") == "cs8";
             if (const double cap = usbLinkRate(uri_, radioOption(s, "link", "auto")); cap > 0) {
                 const std::string n = usbLinkNote(want, cap * (cs8_ ? 2 : 1), tezuka_, cs8_);
                 if (!n.empty()) { fprintf(stderr, "%s\n", n.c_str()); fflush(stderr); if (err.empty()) err = n; }
@@ -383,14 +371,6 @@ protected:
             checkRate(s.sampleRate, err);
             iio().channel_enable(i_);
             if (cs8_) iio().channel_disable(q_); else iio().channel_enable(q_);
-            if (both_) {
-                iio().channel_enable(i2_);
-                iio().channel_enable(q2_);
-                DiversityConfig dc;
-                dc.rateHz = rate_;
-                dc.maxCfoHz = 500;   // one LO: there is no offset to find
-                combiner_.configure(dc);
-            }
             // 8 kernel buffers (as SDR++ does) to ride out a late reader, on every firmware (libiio 0.x has the call, 1.x does not)
             if (iio().device_set_kernel_buffers_count) iio().device_set_kernel_buffers_count(rx_, kKernelBuffers);
             // over a network every refill is a round trip to iiod: a buffer of ~25 ms keeps 16 Msps and more flowing (#114); USB keeps 64k
@@ -404,7 +384,6 @@ protected:
         // the gain control: manual, with OnAir's gain (the default), or the AD9361's own AGC (TuneSettings "gainmode": slow_attack, fast_attack)
         const std::string gm = radioOption(s, "gainmode", "manual");
         if (!live || gm != gainMode_) {
-            if (rxCh2_) iio().channel_attr_write(rxCh2_, "gain_control_mode", gm.c_str());
             if (iio().channel_attr_write(rxCh_, "gain_control_mode", gm.c_str()) >= 0) gainMode_ = gm;
             else { fprintf(stderr, "PlutoSDR: the gain mode %s was refused\n", gm.c_str()); fflush(stderr); }
         }
@@ -438,7 +417,6 @@ protected:
         }
         const double g = std::min(gmax, std::max(std::max(0.0, gmin), s.gainDb));
         if (gainMode_ != "manual" && !gainMode_.empty()) return true;   // the radio's AGC sets the gain (hardwaregain is for manual mode only)
-        if (rxCh2_) iio().channel_attr_write_longlong(rxCh2_, "hardwaregain", (long long)std::llround(g));
         if (const int r = iio().channel_attr_write_longlong(rxCh_, "hardwaregain", (long long)std::llround(g)); r != 0) {
             fprintf(stderr, "PlutoSDR: the gain %.0f dB was refused at %s MHz: %s\n", g, mhz(f).c_str(), iio().text(r).c_str());
             fflush(stderr);
@@ -485,21 +463,6 @@ protected:
             if (got <= 0) { if (++failures > 20) { fprintf(stderr, "PlutoSDR: stream error, stopping the source\n"); break; } continue; }
             failures = 0;
             size_t n;
-            if (both_) {   // I1 Q1 I2 Q2 per sample
-                const int16_t* p = static_cast<const int16_t*>(iio().buffer_start(buf_));
-                n = std::min<size_t>((size_t)got / 8, block_);
-                conv2_.resize(n);
-                for (size_t k = 0; k < n; k++) {
-                    conv_[k] = cf32(p[4 * k] / 2048.f, p[4 * k + 1] / 2048.f);
-                    conv2_[k] = cf32(p[4 * k + 2] / 2048.f, p[4 * k + 3] / 2048.f);
-                }
-                if (auto tap = gPlutoDualTap.load()) tap(conv_.data(), conv2_.data(), n);
-                combiner_.push(conv_.data(), conv2_.data(), n);
-                combined_.clear();
-                combiner_.pull(combined_);
-                if (!combined_.empty()) push(combined_.data(), combined_.size());
-                continue;
-            }
             if (cs8_) {
                 const int8_t* p = static_cast<const int8_t*>(iio().buffer_start(buf_));
                 n = std::min<size_t>((size_t)got / 2, block_);   // 2 bytes per I/Q sample
@@ -534,12 +497,6 @@ private:
     IioApi::iio_device* phy_ = nullptr;
     IioApi::iio_device* rx_ = nullptr;
     IioApi::iio_channel* rxCh_ = nullptr;
-    IioApi::iio_channel* rxCh2_ = nullptr;   // "both": the second receiver
-    IioApi::iio_channel* i2_ = nullptr;
-    IioApi::iio_channel* q2_ = nullptr;
-    bool both_ = false;
-    DiversityCombiner combiner_;
-    std::vector<cf32> conv2_, combined_;
     IioApi::iio_channel* lo_ = nullptr;
     IioApi::iio_channel* i_ = nullptr;
     IioApi::iio_channel* q_ = nullptr;
@@ -740,9 +697,8 @@ DeviceInfo plutoEntry(const std::string& uri, const std::string& desc, bool prob
                                 "Slow / fast attack: the AD9361's own AGC sets it (fast attack for bursts); the gain slider then has no effect.",
                                 {"manual", "slow_attack", "fast_attack"}, {"Manual", "Radio AGC, slow attack", "Radio AGC, fast attack"}, "manual"),
                   choiceSetting("antenna", "Antenna",
-                                "Which receiver to use. RX2 and Both need a radio with two receivers (ANTSDR E310, Pluto+ with the 2R image).\n"
-                                "Both: the two antennas combined into a cleaner narrowband signal, at twice the data on the link.",
-                                {"rx1", "rx2", "both"}, {"RX1", "RX2", "Both (combined)"}, "rx1", true)};
+                                "Which receiver to use. RX2 needs a radio with two receivers (ANTSDR E310, Pluto+ with the 2R image).",
+                                {"rx1", "rx2"}, {"RX1", "RX2"}, "rx1", true)};
     bool tez = false, known = false;
     {
         std::lock_guard<std::mutex> lk(gRangeMu);

@@ -224,7 +224,7 @@ static const HamItUp* hamItUpInUse(const App& a) {
 }
 
 static bool antennaForMode(App& a, int family);
-static void linkForAntenna(App& a);
+static void forgetBothAntennas(App& a);
 static void matchServerRate(App& a);
 static void keepDabScan(App& a);
 static void restoreDabScan(App& a);
@@ -989,35 +989,64 @@ static void applyAntennaConverter(App& a) {
     }
 }
 
-// Both receivers are twice the data: Auto stays at 4 Msps (32 MB/s, which a phone's Wi-Fi was measured to carry) when the mode fits in that
-static void linkForAntenna(App& a) {
-    DeviceInfo& d = a.devices[(size_t)a.devIdx];
-    if (d.board == "pluto") d.steadyRateHz = antennaOf(a) == "both" ? 4e6 : 0;
+// An earlier build offered Antenna "Both" (the two receivers combined). It is gone: a saved one becomes RX1, for the radio and for each mode.
+static void forgetBothAntennas(App& a) {
+    for (auto& [key, value] : a.tune.radio)
+        if ((key == "antenna" || key.rfind("ant.", 0) == 0) && value == "both") value = "rx1";
 }
 
 // A server may keep its own rate whatever it is asked (OnAir's "Share my radio" does). The receiver would then run fast or slow, so the rate that
-// really arrives is measured, and the radio is reopened at it. The first seconds after a start are the engine's own to settle.
+// really arrives is measured. Once a server is caught sending its own rate, that rate is remembered with the radio ("serverRateHz") and is the
+// only one the radio offers: Auto then picks it for every mode, so a change of mode never starts in slow motion. A server that follows what it
+// is asked never gets there. Each reading is one second of bytes; the first two after a start or a change are skipped (the server's backlog and
+// the old rate), and the middle one of the next three decides.
+static double snapRate(double hz) {
+    static const double kCommon[] = {0.25e6, 0.9e6, 1e6, 1.024e6, 1.4e6, 1.536e6, 1.792e6, 1.92e6, 2e6, 2.048e6, 2.16e6, 2.4e6, 2.5e6, 2.56e6,
+                                     2.88e6, 3e6, 3.2e6, 4e6, 5e6, 6e6, 8e6, 10e6, 12e6, 16e6, 20e6};
+    double best = 0;
+    for (double c : kCommon) if (std::fabs(hz / c - 1) < 0.02 && (best == 0 || std::fabs(hz - c) < std::fabs(hz - best))) best = c;
+    return best > 0 ? best : std::round(hz / 1e4) * 1e4;
+}
+
 static void matchServerRate(App& a) {
-    static std::string radio;
-    static int off = 0, tries = 0;
-    static auto last = std::chrono::steady_clock::time_point{};
-    const DeviceInfo d = a.devices[(size_t)a.devIdx];
-    if (d.name != radio) { radio = d.name; tries = 0; off = 0; }
+    static uint64_t lastBytes = 0;
+    static double lastAsked = 0;
+    static int skip = 2;
+    static std::vector<double> seen;
+    DeviceInfo& d = a.devices[(size_t)a.devIdx];
+    if (d.board != "rtltcp") return;
+    double pinned = 0;
+    if (const auto it = a.tune.radio.find("serverRateHz"); it != a.tune.radio.end()) pinned = std::atof(it->second.c_str());
+    if (pinned > 0 && (d.maxRateHz != pinned || d.minRateHz != pinned)) {   // the radio list is rebuilt now and then: the pin goes back on
+        d.minRateHz = d.maxRateHz = pinned;
+        d.rateRanges = {{pinned, pinned}};
+    }
     dect2::RtlTcpThroughput t;
     const double running = a.engine.radioRate();
-    if (d.board != "rtltcp" || !a.engine.running() || running <= 0 || !dect2::rtlTcpThroughput(d.nativeArgs, t) || !t.valid || std::fabs(t.achievedHz / running - 1) < 0.04) { off = 0; return; }
-    const auto now = std::chrono::steady_clock::now();
-    if (++off < 12 || tries >= 3 || now - last < std::chrono::seconds(6)) return;   // 3 s of it (four reads a second)
-    const double hz = std::round(t.achievedHz / 1000) * 1000;
-    off = 0;
-    tries++;
-    last = now;
-    a.engine.log("the rtl_tcp server sends " + std::to_string(hz / 1e6) + " Msps: following it");
-    if (hz > a.devices[(size_t)a.devIdx].maxRateHz) {   // listed as an RTL-SDR until now; what arrives proves it is faster
-        a.devices[(size_t)a.devIdx].maxRateHz = hz;
-        a.devices[(size_t)a.devIdx].rateRanges.clear();
-    }
-    chooseSampleRate(a, hz);
+    if (!a.engine.running() || running <= 0 || !dect2::rtlTcpThroughput(d.nativeArgs, t) || !t.valid) { skip = 2; seen.clear(); lastBytes = 0; return; }
+    if (t.bytes == lastBytes) return;   // the same second as before
+    const bool fresh = t.bytes < lastBytes || t.askedHz != lastAsked;   // a new connection or a new rate asked
+    lastBytes = t.bytes;
+    lastAsked = t.askedHz;
+    if (fresh) { skip = 2; seen.clear(); }
+    if (skip > 0) { skip--; return; }
+    seen.push_back(t.achievedHz);
+    if (seen.size() < 3) return;
+    std::vector<double> v(seen.end() - 3, seen.end());
+    std::sort(v.begin(), v.end());
+    const double got = v[1];
+    seen.clear();
+    if (std::fabs(got / running - 1) < 0.04) return;   // it sends what was asked
+    const double hz = snapRate(got);
+    if (hz == pinned && hz == running) return;
+    a.engine.log("the rtl_tcp server sends " + std::to_string(hz / 1e6) + " Msps whatever it is asked: the radio is set to that rate");
+    a.tune.radio["serverRateHz"] = std::to_string((long long)hz);
+    saveRadioSettings(a);
+    d.minRateHz = d.maxRateHz = hz;
+    d.rateRanges = {{hz, hz}};
+    skip = 2;
+    chooseSampleRate(a, 0);   // Auto: any rate the old matching saved for this mode goes
+    startReceiver(a);         // the driver now asks for the server's rate
 }
 
 // The antenna chosen in a mode comes back with that mode ("ant.<family>" among the radio's settings)
@@ -1028,7 +1057,7 @@ static bool antennaForMode(App& a, int family) {
     if (wanted == a.tune.radio.end() || wanted->second == antennaOf(a)) return false;
     a.tune.radio["antenna"] = wanted->second;
     applyAntennaConverter(a);
-    linkForAntenna(a);
+    forgetBothAntennas(a);
     saveRadioSettings(a);
     return true;
 }
@@ -1099,7 +1128,7 @@ void onair_radio_setting_set(const char* key, const char* value) {
         if (r.key == "antenna") {
             applyAntennaConverter(a);
             a.tune.radio["ant." + std::to_string(a.family)] = value;
-            linkForAntenna(a);
+            forgetBothAntennas(a);
         }
         saveRadioSettings(a);
         if (!a.engine.running()) return;
@@ -1127,6 +1156,13 @@ void onair_source_select_named(const char* source) {
         if (test ? a.devices[(size_t)i].kind == DeviceInfo::Synthetic : a.devices[(size_t)i].isNetwork()) { a.devIdx = i; return; }
 }
 
+// the rate an rtl_tcp server is measured to send, for the verify line (0 when not one)
+static double serverRateNow(const App& a) {
+    dect2::RtlTcpThroughput t;
+    const DeviceInfo& d = a.devices[(size_t)a.devIdx];
+    return d.board == "rtltcp" && dect2::rtlTcpThroughput(d.nativeArgs, t) ? t.achievedHz : 0;
+}
+
 const char* onair_verify_line(void) {
     App& a = appRunApp();
     if (a.engine.player().selected() >= 0) {
@@ -1134,9 +1170,10 @@ const char* onair_verify_line(void) {
         gVideoStatus = st.videoCodec + " " + std::to_string(st.width) + "x" + std::to_string(st.height) + " " + st.audioCodec + " hw=" + (st.hardware ? "1" : "0") + " decoded=" + std::to_string(st.decoded);
     }
     const std::string json = onair::resultsJson(a.rx, a.engine.running());
-    char head[200];
-    snprintf(head, sizeof head, " running=%d std=%d audioSec=%.1f videoFrames=%llu services=%zu tsPackets=%llu rate=%.2f json=", a.engine.running() ? 1 : 0, a.rx.standard,
-             dect2::audioIosPlayedFrames() / 48000.0, (unsigned long long)gVideoFrames, a.ts.services.size(), (unsigned long long)a.ts.totalPackets, a.engine.sampleRate() / 1e6);
+    char head[260];
+    snprintf(head, sizeof head, " running=%d std=%d audioSec=%.1f videoFrames=%llu services=%zu tsPackets=%llu rate=%.2f radio=%.3f server=%.3f json=", a.engine.running() ? 1 : 0, a.rx.standard,
+             dect2::audioIosPlayedFrames() / 48000.0, (unsigned long long)gVideoFrames, a.ts.services.size(), (unsigned long long)a.ts.totalPackets, a.engine.sampleRate() / 1e6,
+             a.engine.radioRate() / 1e6, serverRateNow(a) / 1e6);
     const dect2::SampleLoss loss = a.engine.sampleLoss();
     char lossText[240];
     static float tap[4096];
@@ -1183,12 +1220,12 @@ const char* onair_status_json(void) {
     const dect2::SampleLoss loss = a.engine.sampleLoss();
     const int deliveredLow = a.engine.running() && loss.rateLow ? (int)loss.deliveredPct : 0;   // the percentage, when a live radio falls short
     keepDabScan(a);
-    linkForAntenna(a);
+    forgetBothAntennas(a);
     matchServerRate(a);
     const int hamItUpTop = converter && a.freqMhz * 1e6 > converter->highHz ? (int)(converter->highHz / 1e6) : 0;   // the top of it, when tuned above
     gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
               dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +
-              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"scan\":" + (modeHasScan(a) ? "true" : "false") + ",\"dual\":" + (a.devices[(size_t)a.devIdx].isRadio() && antennaOf(a) == "both" ? "true" : "false") + ",\"delivered\":" + std::to_string(deliveredLow) + ",\"hamItUpTop\":" + std::to_string(hamItUpTop) + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
+              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"scan\":" + (modeHasScan(a) ? "true" : "false") + ",\"delivered\":" + std::to_string(deliveredLow) + ",\"hamItUpTop\":" + std::to_string(hamItUpTop) + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
     return gStatus.c_str();
 }
 

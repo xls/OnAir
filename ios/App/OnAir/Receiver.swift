@@ -15,7 +15,6 @@ final class Receiver {
         var family = -1
         var error = ""
         var scan = false
-        var dual = false
         var delivered = 0   // percent of the radio's samples arriving, when too few do
         var hamItUpTop = 0   // MHz, when tuned above what the Ham It Up in use passes
     }
