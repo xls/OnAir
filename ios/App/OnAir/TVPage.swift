@@ -398,6 +398,13 @@ private struct ChannelList: View {
         var mux: ScannedMux?
     }
 
+    private struct Group: Identifiable {
+        var id: String { title }
+        let title: String
+        let tuned: Bool
+        let rows: [Row]
+    }
+
     let receiver: Receiver
     let state: TVState
     @AppStorage("tvFound") private var foundText = "[]"
@@ -406,27 +413,53 @@ private struct ChannelList: View {
 
     private func name(_ service: TVState.Service) -> String { service.name.isEmpty ? "Service \(service.id)" : service.name }
 
-    private var rows: [Row] {
-        var out = state.services.map { Row(id: "live\($0.id)", name: name($0), lcn: $0.lcn, service: $0) }
-        let live = Set(out.map(\.name))
-        for mux in ScannedMux.saved(foundText) {
-            for channel in mux.allChannels where !live.contains(channel.name) {
-                out.append(Row(id: "\(mux.mhz)-\(channel.name)", name: channel.name, lcn: channel.lcn, mux: mux))
+    private func ordered(_ rows: [Row]) -> [Row] {
+        rows.sorted { ($0.lcn == 0 ? 9999 : $0.lcn, $0.name) < ($1.lcn == 0 ? 9999 : $1.lcn, $1.name) }
+    }
+
+    /// One group for each frequency. Channels of the frequency being received show what is on.
+    private var groups: [Group] {
+        var left = state.services
+        var out: [Group] = []
+        for mux in ScannedMux.saved(foundText).sorted(by: { $0.mhz < $1.mhz }) {
+            let tuned = abs(mux.mhz - receiver.status.mhz) < 0.1
+            var rows: [Row] = mux.allChannels.map { channel in
+                let index = tuned ? left.firstIndex { name($0) == channel.name } : nil
+                let service = index.map { left.remove(at: $0) }
+                return Row(id: "\(mux.mhz)-\(channel.name)", name: channel.name, lcn: service?.lcn ?? channel.lcn, service: service, mux: mux)
             }
+            if tuned {   // on the air now but not there when it was scanned
+                rows += left.map { Row(id: "live\($0.id)", name: name($0), lcn: $0.lcn, service: $0) }
+                left = []
+            }
+            out.append(Group(title: String(format: "%@ · %.3f MHz", mux.label, mux.mhz), tuned: tuned, rows: ordered(rows)))
         }
-        return out.sorted { ($0.lcn == 0 ? 9999 : $0.lcn, $0.name) < ($1.lcn == 0 ? 9999 : $1.lcn, $1.name) }
+        if !left.isEmpty {
+            let rows = left.map { Row(id: "live\($0.id)", name: name($0), lcn: $0.lcn, service: $0) }
+            out.insert(Group(title: String(format: "%.3f MHz", receiver.status.mhz), tuned: true, rows: ordered(rows)), at: 0)
+        }
+        return out
     }
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 8) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 if !problem.isEmpty {
-                    Text(problem).font(.footnote).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(problem).font(.footnote).foregroundStyle(.orange)
                 }
-                ForEach(rows) { row in
-                    Button { pick(row) } label: { label(row) }
+                ForEach(groups) { group in
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 6) {
+                            Text(group.title).font(.caption.weight(.semibold)).foregroundStyle(group.tuned ? TV.accent : Color.secondary)
+                            if group.tuned { Text("TUNED").font(.system(size: 9, weight: .bold)).foregroundStyle(TV.accent) }
+                        }
+                        .padding(.bottom, 4)
+                        ForEach(group.rows) { row in
+                            Button { pick(row) } label: { label(row) }
+                        }
+                    }
                 }
-                if rows.isEmpty {
+                if groups.isEmpty {
                     Text("No channels yet. Scan to find them.").font(.footnote).foregroundStyle(.secondary).padding(.top, 20)
                 }
             }
@@ -449,8 +482,8 @@ private struct ChannelList: View {
                     if !service.next.isEmpty {
                         Text("Next: \(service.next)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                     }
-                } else if let mux = row.mux {
-                    Text(tuning == row.name ? "Tuning…" : String(format: "%@, %.3f MHz", mux.label, mux.mhz)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                } else if tuning == row.name {
+                    Text("Tuning…").font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -458,8 +491,9 @@ private struct ChannelList: View {
             if row.service?.scrambled == true { Image(systemName: "lock.fill").foregroundStyle(.secondary) }
             if selected { Image(systemName: "play.fill").foregroundStyle(TV.accent) }
         }
-        .padding(10)
-        .background(selected ? TV.accent.opacity(0.16) : TV.card, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(selected ? TV.accent.opacity(0.16) : TV.card, in: RoundedRectangle(cornerRadius: 6))
     }
 
     private func pick(_ row: Row) {
