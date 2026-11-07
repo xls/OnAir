@@ -180,7 +180,7 @@ struct TVPage: View {
                         case .channels: ChannelList(state: state)
                         case .guide: TVGuide(state: state)
                         case .teletext: TeletextView()
-                        case .scan: ScanView(receiver: receiver, state: state)
+                        case .scan: ScanView(receiver: receiver, state: state) { section = .channels }
                         }
                     }
                     .frame(maxHeight: .infinity)
@@ -519,6 +519,7 @@ private struct ScanView: View {
 
     let receiver: Receiver
     let state: TVState
+    let picked: () -> Void
     @AppStorage("tvReception") private var reception = Reception.antenna
     @AppStorage("tvFound") private var foundText = "[]"
     @State private var plan = ChannelPlan()
@@ -572,6 +573,7 @@ private struct ScanView: View {
                 ForEach(found) { mux in
                     Button {
                         onair_channel_pick(mux.mhz, mux.bandwidth)
+                        picked()
                         receiver.refresh()
                     } label: {
                         VStack(alignment: .leading, spacing: 3) {

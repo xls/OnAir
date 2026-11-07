@@ -229,14 +229,16 @@ private struct ScrollerJump: UIViewRepresentable {
     let token: Int
     let moved: (CGPoint) -> Void
 
-    final class Coordinator {
+    @MainActor final class Coordinator {
         var done: Int?
         var watching: NSKeyValueObservation?
+        var moved: ((CGPoint) -> Void)?
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> UIView { UIView() }
 
     func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.moved = moved
         guard context.coordinator.done != token else { return }
         context.coordinator.done = token
         jump(view, attempts: 10, context.coordinator)
@@ -251,10 +253,9 @@ private struct ScrollerJump: UIViewRepresentable {
                 return
             }
             if coordinator.watching == nil {
-                let moved = moved
-                coordinator.watching = scroller.observe(\.contentOffset, options: [.initial, .new]) { scroller, _ in
-                    let offset = scroller.contentOffset
-                    DispatchQueue.main.async { moved(offset) }
+                coordinator.watching = scroller.observe(\.contentOffset, options: [.initial, .new]) { [weak coordinator] scroller, _ in
+                    nonisolated(unsafe) let scroller = scroller   // UIKit calls this on the main thread
+                    MainActor.assumeIsolated { coordinator?.moved?(scroller.contentOffset) }
                 }
             }
             let most = scroller.contentSize.width - scroller.bounds.width
