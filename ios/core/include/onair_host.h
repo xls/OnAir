@@ -137,6 +137,7 @@ void onair_antenna_converter_model(const char* antenna, const char* model);   //
 void onair_antenna_converter_lo(const char* antenna, double mhz);  // its oscillator, normally 125
 void onair_converter_set(const char* id, double loMhz);            // loMhz is for the custom one
 const char* onair_bearing_json(void);                              // {ok, phaseDeg, coherence, hz}: RX2 against RX1 on the filter band
+const char* onair_scanned_json(void);                              // [{mhz, name, note}] found by the scan of this mode
 const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs
 void onair_tv_play_file(const char* path);                        // a recorded .ts through the demux and the player, at its own pace
 void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic

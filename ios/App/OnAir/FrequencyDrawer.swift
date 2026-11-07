@@ -34,7 +34,14 @@ struct ChannelPlan: Decodable {
 
 /// Pulls up from the frequency window: type a frequency, or pick from what OnAir knows for this mode.
 struct FrequencyDrawer: View {
+    private struct Scanned: Decodable, Identifiable {
+        var id: String { "\(mhz)\(name)" }
+        let mhz: Double
+        let name, note: String
+    }
+
     let receiver: Receiver
+    @State private var scanned: [Scanned] = []
     @Environment(\.dismiss) private var dismiss
     @State private var plan = ChannelPlan()
     @State private var typed = ""
@@ -44,6 +51,10 @@ struct FrequencyDrawer: View {
 
     private var channels: [ChannelPlan.Channel] {
         plan.channels.filter { query.isEmpty || $0.label.localizedCaseInsensitiveContains(query) || String($0.mhz).contains(query) }
+    }
+
+    private var stations: [Scanned] {
+        scanned.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.note.localizedCaseInsensitiveContains(query) || String($0.mhz).contains(query) }
     }
 
     private var known: [ChannelPlan.Known] {
@@ -86,7 +97,7 @@ struct FrequencyDrawer: View {
                     .frame(height: 38)
                 }
             }
-            if plan.channels.count + plan.known.count > 12 {
+            if plan.channels.count + plan.known.count + scanned.count > 12 {
                 GlassWindow(corner: 6) {
                     TextField("", text: $query, prompt: Text("SEARCH").foregroundStyle(RadioTheme.amber.opacity(0.4)))
                         .font(.system(size: 13, design: .monospaced))
@@ -103,6 +114,22 @@ struct FrequencyDrawer: View {
                             onair_channel_plan_set(plan.plans[index].id)
                             plan = ChannelPlan.current()
                         }
+                    }
+                }
+            }
+            if !stations.isEmpty {
+                PanelSection(title: "Scanned stations") {
+                    ForEach(stations) { station in
+                        Button {
+                            onair_channel_pick(station.mhz, 0)
+                            finish()
+                        } label: {
+                            PanelRow(label: station.name, help: station.note) {
+                                Text(String(format: "%.3f", station.mhz)).font(.system(size: 13, design: .monospaced)).foregroundStyle(RadioTheme.amber)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -145,6 +172,7 @@ struct FrequencyDrawer: View {
         .onAppear {
             plan = ChannelPlan.current()
             typed = text(mhz: receiver.status.mhz)
+            if let json = onair_scanned_json() { scanned = (try? JSONDecoder().decode([Scanned].self, from: Data(String(cString: json).utf8))) ?? [] }
         }
     }
 

@@ -615,6 +615,20 @@ const char* onair_fm_json(void) {
     return gJson.c_str();
 }
 
+// What the current mode's scan found, for the frequency drawer
+const char* onair_scanned_json(void) {
+    App& a = appRunApp();
+    gJson = "[";
+    auto add = [&](double mhz, const std::string& name, const std::string& note) {
+        if (gJson.size() > 1) gJson += ",";
+        gJson += "{\"mhz\":" + textOf(mhz) + ",\"name\":" + quoted(name) + ",\"note\":" + quoted(note) + "}";
+    };
+    if (a.fmMode) { for (const auto& r : a.fmScan.results) if (r.found) add(r.mhz, r.name.empty() ? "Station" : r.name, r.rt.empty() ? r.pty : r.rt); }
+    else if (a.dabMode) { for (const auto& r : a.dabScan.results) if (r.found) add(r.mhz, r.label.empty() ? r.name : r.label, r.stations); }
+    gJson += "]";
+    return gJson.c_str();
+}
+
 const char* onair_channels_json(void) {
     App& a = appRunApp();
     namespace tp = dect2::tvplan;
