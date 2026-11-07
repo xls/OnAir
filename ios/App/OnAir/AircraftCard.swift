@@ -47,7 +47,7 @@ import SwiftUI
     private func get<T: Decodable>(_ type: T.Type, _ path: String) async -> T? {
         guard let url = URL(string: "https://api.adsbdb.com/v0/\(path)") else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 8)
-        request.setValue("OnAir iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("Tuneit iOS", forHTTPHeaderField: "User-Agent")
         guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
         return try? JSONDecoder().decode(T.self, from: data)   // an unknown aircraft is a reply of another shape
     }

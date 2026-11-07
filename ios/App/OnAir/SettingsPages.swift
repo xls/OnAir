@@ -22,7 +22,7 @@ struct SettingsPage: View {
     /// One category, or nil for all of them.
     let only: String?
     @State private var rows: [Row] = []
-    @State private var query = ""
+    @State private var query = ProcessInfo.processInfo.arguments.contains("--show-about") ? "no such setting" : ""
     @State private var outputName = ""
 
     private var shown: [Row] {
@@ -66,6 +66,7 @@ struct SettingsPage: View {
                     }
                 }
             }
+            if only == nil { AboutSection() }
         }
         .onAppear(perform: load)
     }
@@ -307,7 +308,7 @@ private struct LocationSection: View {
     }
 
     private var note: String {
-        location.denied ? "Location is off for OnAir. Tap the key to open iOS Settings." : ""
+        location.denied ? "Location is off for Tuneit. Tap the key to open iOS Settings." : ""
     }
 
     private func load() { onair_location(&lat, &lon) }
@@ -386,6 +387,25 @@ private struct ConverterSection: View {
         if let new = decode(State.self, onair_converter_json()) {
             state = new
             entry = new.lo
+        }
+    }
+}
+
+/// What the app is, and whose work it runs on.
+private struct AboutSection: View {
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
+
+    var body: some View {
+        PanelSection(title: "About") {
+            PanelRow(label: "Tuneit", help: "Version \(version)") { EmptyView() }
+            PanelRow(label: "Built on OnAir", help: "The receivers, decoders and radio drivers are OnAir, by adswill and its contributors, under the GPL 3.0. Tuneit is the iPhone interface on top of it.") { EmptyView() }
+            Link(destination: URL(string: "https://github.com/adswill/OnAir")!) {
+                PanelRow(label: "OnAir on GitHub", help: "github.com/adswill/OnAir") {
+                    Image(systemName: "arrow.up.right").foregroundStyle(RadioTheme.amber)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 }

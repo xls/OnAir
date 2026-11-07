@@ -28,11 +28,12 @@ targets:
     info:
       path: App/OnAir/Info.plist
       properties:
+        CFBundleDisplayName: Tuneit
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true          # Documents/Recordings shows in the Files app
         LSSupportsOpeningDocumentsInPlace: true
-        NSLocationWhenInUseUsageDescription: OnAir centres its maps on where you are.
-        NSMicrophoneUsageDescription: OnAir sends your voice when you transmit.
+        NSLocationWhenInUseUsageDescription: Tuneit centres its maps on where you are.
+        NSMicrophoneUsageDescription: Tuneit sends your voice when you transmit.
     dependencies:
       - framework: build/OnAirCore.xcframework
         embed: false
@@ -69,4 +70,4 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: OnAir connects to your PlutoSDR or rtl_tcp radio on the local network.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Tuneit connects to your PlutoSDR or rtl_tcp radio on the local network.

@@ -457,7 +457,7 @@ private struct InternetTVPanel: View {
                         }
                     }
                     if state.channels.isEmpty && state.playing.isEmpty {
-                        Text("OnAir ships no channels. Enter the address of an HLS, HTTP, UDP or RTP stream, or an M3U playlist.")
+                        Text("Tuneit ships no channels. Enter the address of an HLS, HTTP, UDP or RTP stream, or an M3U playlist.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
