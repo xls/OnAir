@@ -22,7 +22,7 @@ private struct HamBand: Identifiable {
 }
 
 private enum VoiceMode: String, CaseIterable, Identifiable {
-    case usb = "USB", lsb = "LSB", cw = "CW", am = "AM", fm = "FM", wfm = "WFM"
+    case usb = "USB", lsb = "LSB", cw = "CW", am = "AM", fm = "NFM", wfm = "WFM"
     var id: Self { self }
     var demod: Int32 { switch self { case .fm: 0; case .wfm: 1; case .am: 2; case .usb: 3; case .lsb: 4; case .cw: 5 } }
 }
@@ -124,7 +124,8 @@ struct HamPage: View {
                     transmitKey
                 }
             }
-            .padding(.horizontal, 18)
+            .padding(.leading, 18)
+            .padding(.trailing, 28)   // clear of the drawer tabs on the right edge
             .padding(.vertical, 10)
         }
         .sheet(isPresented: $showTransmit) {
@@ -257,8 +258,8 @@ struct HamPage: View {
     }
 
     private var shortwaveDemods: some View {
-        LazyVGrid(columns: keyGrid(5), spacing: 4) {
-            ForEach([VoiceMode.am, .usb, .lsb, .cw, .fm]) { mode in
+        LazyVGrid(columns: keyGrid(6), spacing: 4) {
+            ForEach([VoiceMode.am, .usb, .lsb, .cw, .fm, .wfm]) { mode in
                 HardwareKey(lit: Int32(general.demod) == mode.demod, led: .green, action: { select(voice: mode) }) {
                     EngravedLabel(text: mode.rawValue, size: 9)
                 }
