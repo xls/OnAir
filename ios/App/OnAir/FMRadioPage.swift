@@ -69,22 +69,28 @@ struct FMRadioPage: View {
         GlassWindow(corner: 8) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(String(format: "%.3f", receiver.status.mhz))
-                        .font(.system(size: 42, weight: .light, design: .monospaced))
-                        .lineLimit(1)
-                        .fixedSize()
+                    ZStack(alignment: .trailing) {   // the width of 100 MHz and up, so the digits stay put below it
+                        Text("000.000").hidden()
+                        Text(String(format: "%.3f", receiver.status.mhz))
+                    }
+                    .font(.system(size: 42, weight: .light, design: .monospaced))
+                    .lineLimit(1)
+                    .fixedSize()
                     Spacer(minLength: 6)
                     Text(locked && !fm.station.isEmpty ? fm.station : "· · · · ·")
                         .font(.system(size: 17, weight: .semibold, design: .monospaced))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                        .truncationMode(.tail)
                 }
+                .frame(height: 50)
                 .foregroundStyle(RadioTheme.amber)
                 .shadow(color: RadioTheme.amber.opacity(0.8), radius: 8)
+                // two lines' room whatever the station sends, or nothing
                 Text(displayLine)
                     .font(.system(size: 12, weight: .regular, design: .monospaced))
                     .foregroundStyle(RadioTheme.amber.opacity(0.75))
-                    .lineLimit(2, reservesSpace: true)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32, alignment: .topLeading)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)

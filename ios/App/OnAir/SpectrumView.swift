@@ -351,11 +351,9 @@ struct SpectrumPage: View {
     private var axis: some View {
         HStack {
             if receiver.status.running {
-                Text(Receiver.axisText(hz: spectrum.lowHz, spanHz: spectrum.highHz - spectrum.lowHz))
-                Spacer()
-                Text(Receiver.frequencyText(mhz: spectrum.frequency(atFraction: 0.5) / 1e6))
-                Spacer()
-                Text(Receiver.axisText(hz: spectrum.highHz, spanHz: spectrum.highHz - spectrum.lowHz))
+                Text(Receiver.axisText(hz: spectrum.lowHz, spanHz: spectrum.highHz - spectrum.lowHz)).frame(maxWidth: .infinity, alignment: .leading)
+                Text(Receiver.frequencyText(mhz: spectrum.frequency(atFraction: 0.5) / 1e6)).fixedSize()
+                Text(Receiver.axisText(hz: spectrum.highHz, spanHz: spectrum.highHz - spectrum.lowHz)).frame(maxWidth: .infinity, alignment: .trailing)
             } else {  // no capture, so no span: only where it is tuned
                 Spacer()
                 Text(Receiver.frequencyText(mhz: receiver.status.mhz))
