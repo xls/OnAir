@@ -308,6 +308,18 @@ struct StatusStrip: View {
     var body: some View {
         VStack(spacing: 0) {
             strip
+            if receiver.status.hamItUpTop > 0 && receiver.status.error.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(RadioTheme.amber)
+                    Text("Ham It Up passes HF only, up to \(receiver.status.hamItUpTop) MHz. Set the unit to passthrough and turn it off under Device, or use the other antenna.")
+                        .font(.footnote)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(red: 0.3, green: 0.2, blue: 0.04))
+            }
             if !receiver.status.error.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(RadioTheme.amber)

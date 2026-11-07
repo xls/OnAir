@@ -202,6 +202,25 @@ void pageBody(App& a, ImVec2) {
 
 static std::string gNetPassword;
 static bool gCoreUp = false;       // appRunInit is done: before that there is no App to ask
+// What each Ham It Up passes in its upconvert position. Above that the unit has to be on passthrough. All of them have a 125 MHz oscillator
+// (Nano: rtl-sdr.com's table; the first Plus has no published range here and is taken as the v2).
+struct HamItUp { const char* id; double lowHz, highHz; };
+constexpr HamItUp kHamItUps[] = {{"plus", 300, 65e6}, {"v13", 500e3, 50e6}, {"nano", 100e3, 65e6}};
+
+static std::string antennaOf(const App& a) {
+    const auto it = a.tune.radio.find("antenna");
+    return it != a.tune.radio.end() ? it->second : std::string("rx1");
+}
+
+static const HamItUp* hamItUpInUse(const App& a) {
+    const std::string ant = antennaOf(a);
+    const auto own = a.tune.radio.find("conv." + ant);
+    if (own == a.tune.radio.end() || own->second != "hamitup") return nullptr;
+    const auto model = a.tune.radio.find("conv." + ant + ".model");
+    if (model != a.tune.radio.end()) for (const HamItUp& h : kHamItUps) if (model->second == h.id) return &h;
+    return &kHamItUps[0];
+}
+
 static bool gStartTried = false;   // the last thing asked of POWER was to start: its refusal is shown until something changes
 
 extern "C" {
@@ -674,6 +693,7 @@ const char* onair_rate_json(void) {
         reachLow = std::max(reachLow + shift, 0.0);
         if (reachHigh > 0) reachHigh += shift;
     }
+    if (const HamItUp* h = d.isRadio() ? hamItUpInUse(a) : nullptr) { reachLow = h->lowHz; reachHigh = h->highHz; }
     json = "{\"usable\":" + std::string(usable ? "true" : "false") + ",\"now\":" + textOf(run ? a.engine.radioRate() : a.chosenRateHz > 0 ? a.chosenRateHz : a.tune.sampleRate) +
            ",\"chosen\":" + textOf(a.chosenRateHz) + ",\"auto\":" + textOf(a.autoRateHz > 0 ? a.autoRateHz : a.tune.sampleRate) + ",\"need\":" + textOf(modeMinSampleRate(a)) + ",\"minHz\":" + textOf(reachLow) + ",\"maxHz\":" + textOf(reachHigh) + ",\"rates\":[";
     bool first = true;
@@ -909,7 +929,7 @@ const char* onair_converter_json(void) {
     const auto setting = [&](const char* key, const char* fallback) { const auto it = a.tune.radio.find(key); return it != a.tune.radio.end() ? it->second : std::string(fallback); };
     gJson = "{\"id\":" + quoted(setting(dect2::convKeyPreset(), "none")) + ",\"lo\":" + quoted(setting(dect2::convKeyLo(), "125")) + ",\"rx1\":" + (setting("conv.rx1", "") == "hamitup" ? "true" : "false") +
             ",\"rx2\":" + (setting("conv.rx2", "") == "hamitup" ? "true" : "false") +
-            ",\"rx1lo\":" + quoted(setting("conv.rx1.lo", "125")) + ",\"rx2lo\":" + quoted(setting("conv.rx2.lo", "125")) + ",\"presets\":[";
+            ",\"rx1model\":" + quoted(setting("conv.rx1.model", "plus")) + ",\"rx2model\":" + quoted(setting("conv.rx2.model", "plus")) + ",\"rx1lo\":" + quoted(setting("conv.rx1.lo", "125")) + ",\"rx2lo\":" + quoted(setting("conv.rx2.lo", "125")) + ",\"presets\":[";
     bool first = true;
     for (const dect2::ConverterPreset& p : dect2::converterPresets()) {
         gJson += std::string(first ? "" : ",") + "{\"id\":" + quoted(p.id) + ",\"name\":" + quoted(p.name) + ",\"custom\":" + (p.custom ? "true" : "false") + "}";
@@ -921,8 +941,7 @@ const char* onair_converter_json(void) {
 
 // Each antenna keeps its own converter: "conv.rx1" and "conv.rx2" name the preset of that antenna
 static std::string antennaKey(const App& a) {
-    const auto it = a.tune.radio.find("antenna");
-    return "conv." + (it != a.tune.radio.end() ? it->second : std::string("rx1"));
+    return "conv." + antennaOf(a);
 }
 
 // "conv.rx1.lo": that antenna's Ham It Up oscillator in MHz when it is not the nominal 125, as the converter's "custom" preset
@@ -939,6 +958,11 @@ static void applyAntennaConverter(App& a) {
         a.tune.radio[dect2::convKeyLo()] = lo->second;
         a.tune.radio[dect2::convKeyMode()] = "add";
     }
+}
+
+void onair_antenna_converter_model(const char* antenna, const char* model) {
+    appRunApp().tune.radio[std::string("conv.") + antenna + ".model"] = model;
+    saveRadioSettings(appRunApp());
 }
 
 void onair_antenna_converter_lo(const char* antenna, double mhz) {
@@ -1049,9 +1073,11 @@ const char* onair_status_json(void) {
     std::string mode;
     for (const auto& m : allModes()) if (modeSelected(a, m)) mode = m.name;
     const std::string source = a.devIdx >= 0 && a.devIdx < (int)a.devices.size() ? a.devices[(size_t)a.devIdx].name : "";
+    const HamItUp* converter = a.devices[(size_t)a.devIdx].isRadio() ? hamItUpInUse(a) : nullptr;
+    const int hamItUpTop = converter && a.freqMhz * 1e6 > converter->highHz ? (int)(converter->highHz / 1e6) : 0;   // the top of it, when tuned above
     gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
               dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +
-              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"scan\":" + (modeHasScan(a) ? "true" : "false") + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
+              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"scan\":" + (modeHasScan(a) ? "true" : "false") + ",\"hamItUpTop\":" + std::to_string(hamItUpTop) + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
     return gStatus.c_str();
 }
 

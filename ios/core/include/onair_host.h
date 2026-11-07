@@ -133,6 +133,7 @@ void onair_location(double* lat, double* lon);                     // the receiv
 void onair_location_set(double lat, double lon);
 const char* onair_converter_json(void);                            // {id, lo, rx1, rx2, rx1lo, rx2lo, presets: [{id, name, custom}]}
 void onair_antenna_converter_set(const char* antenna, bool hamItUp);   // "rx1" or "rx2": that antenna has a Ham It Up on it
+void onair_antenna_converter_model(const char* antenna, const char* model);   // "plus", "v13", "nano": what it passes
 void onair_antenna_converter_lo(const char* antenna, double mhz);  // its oscillator, normally 125
 void onair_converter_set(const char* id, double loMhz);            // loMhz is for the custom one
 const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs

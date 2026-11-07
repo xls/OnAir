@@ -36,13 +36,20 @@ struct SourcePage: View {
                         }
                     }
                     ForEach(Array(zip(antenna.values, antenna.names)), id: \.0) { value, name in
-                        PanelRow(label: "Ham It Up on \(name)", help: "A 125 MHz up-converter on this antenna: reaches HF, and you still tune the frequency at the antenna.") {
+                        PanelRow(label: "Ham It Up on \(name)", help: "Set the unit to Upconvert for HF. Above that, use Passthrough and turn this off.") {
                             RockerSwitch(isOn: Binding(get: { value == "rx1" ? upconverters.rx1 : upconverters.rx2 }, set: { on in
                                 onair_antenna_converter_set(value, on)
                                 loadAntenna()
                             }))
                         }
                         if value == "rx1" ? upconverters.rx1 : upconverters.rx2 {
+                            PanelRow(label: "Model", help: "Sets the range the app expects through it.") {
+                                let chosen = value == "rx1" ? upconverters.rx1model : upconverters.rx2model
+                                SelectorWindow(selected: Self.models.first { $0.id == chosen }?.name ?? "Plus / Plus v2", options: Self.models.map(\.name)) { index in
+                                    onair_antenna_converter_model(value, Self.models[index].id)
+                                    loadAntenna()
+                                }
+                            }
                             OscillatorRow(antenna: value, name: name, mhz: value == "rx1" ? upconverters.rx1lo : upconverters.rx2lo, changed: loadAntenna)
                         }
                     }
@@ -72,7 +79,11 @@ struct SourcePage: View {
         var rx2 = false
         var rx1lo = "125"
         var rx2lo = "125"
+        var rx1model = "plus"
+        var rx2model = "plus"
     }
+
+    private static let models = [(id: "plus", name: "Plus / Plus v2"), (id: "v13", name: "v1.3"), (id: "nano", name: "Nano")]
 
     private func loadAntenna() {
         guard let text = onair_radio_settings_json() else { return }
