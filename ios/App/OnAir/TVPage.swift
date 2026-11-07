@@ -477,14 +477,7 @@ private struct ChannelList: View {
                 .foregroundStyle(TV.accent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name).font(.body.weight(.medium)).foregroundStyle(.white).lineLimit(1)
-                if let service = row.service {
-                    Text(service.now.isEmpty ? service.type : service.now).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    if !service.next.isEmpty {
-                        Text("Next: \(service.next)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
-                    }
-                } else if tuning == row.name {
-                    Text("Tuning…").font(.caption).foregroundStyle(.secondary)
-                }
+                detail(row).frame(height: 15, alignment: .leading)   // always there, so a row never changes height as its details arrive
             }
             Spacer()
             if tuning == row.name { ProgressView().controlSize(.small) }
@@ -492,8 +485,22 @@ private struct ChannelList: View {
             if selected { Image(systemName: "play.fill").foregroundStyle(TV.accent) }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .frame(height: 52)
         .background(selected ? TV.accent.opacity(0.16) : TV.card, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    @ViewBuilder private func detail(_ row: Row) -> some View {
+        if tuning == row.name {
+            Text("Tuning…").font(.caption).foregroundStyle(.secondary)
+        } else if let service = row.service {
+            if service.now.isEmpty {
+                RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.1)).frame(width: 130, height: 8)
+            } else {
+                Text(service.next.isEmpty ? service.now : "\(service.now) · Next: \(service.next)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        } else {
+            Text("Tap to tune").font(.caption).foregroundStyle(.tertiary)
+        }
     }
 
     private func pick(_ row: Row) {
