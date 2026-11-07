@@ -224,6 +224,7 @@ static const HamItUp* hamItUpInUse(const App& a) {
 }
 
 static bool antennaForMode(App& a, int family);
+static void linkForAntenna(App& a);
 static void keepDabScan(App& a);
 static void restoreDabScan(App& a);
 static bool gStartTried = false;   // the last thing asked of POWER was to start: its refusal is shown until something changes
@@ -973,6 +974,12 @@ static void applyAntennaConverter(App& a) {
     }
 }
 
+// Both receivers are twice the data: Auto stays at 4 Msps (32 MB/s, which a phone's Wi-Fi was measured to carry) when the mode fits in that
+static void linkForAntenna(App& a) {
+    DeviceInfo& d = a.devices[(size_t)a.devIdx];
+    if (d.board == "pluto") d.steadyRateHz = antennaOf(a) == "both" ? 4e6 : 0;
+}
+
 // The antenna chosen in a mode comes back with that mode ("ant.<family>" among the radio's settings)
 static bool antennaForMode(App& a, int family) {
     const auto& settings = a.devices[(size_t)a.devIdx].settings;
@@ -981,6 +988,7 @@ static bool antennaForMode(App& a, int family) {
     if (wanted == a.tune.radio.end() || wanted->second == antennaOf(a)) return false;
     a.tune.radio["antenna"] = wanted->second;
     applyAntennaConverter(a);
+    linkForAntenna(a);
     saveRadioSettings(a);
     return true;
 }
@@ -1051,6 +1059,7 @@ void onair_radio_setting_set(const char* key, const char* value) {
         if (r.key == "antenna") {
             applyAntennaConverter(a);
             a.tune.radio["ant." + std::to_string(a.family)] = value;
+            linkForAntenna(a);
         }
         saveRadioSettings(a);
         if (!a.engine.running()) return;
@@ -1134,6 +1143,7 @@ const char* onair_status_json(void) {
     const dect2::SampleLoss loss = a.engine.sampleLoss();
     const int deliveredLow = a.engine.running() && loss.rateLow ? (int)loss.deliveredPct : 0;   // the percentage, when a live radio falls short
     keepDabScan(a);
+    linkForAntenna(a);
     const int hamItUpTop = converter && a.freqMhz * 1e6 > converter->highHz ? (int)(converter->highHz / 1e6) : 0;   // the top of it, when tuned above
     gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
               dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +
