@@ -100,10 +100,18 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
         return saved > 0 ? saved : 80
     }()
 
+    private var peakHold: Float = -500   // the strongest signal lately, falling slowly
+
+    /// The least range that keeps the strongest signal inside the plot: as tall as it goes without clipping.
+    private var fittingRange: Float { max(peakHold - (noiseFloor - Self.belowFloor) + 2, 10) }
+
     func scaleHeight(by factor: Float, done: Bool) {
-        dbRange = min(max(dbRange * factor, 20), 160)
+        dbRange = min(max(dbRange * factor, fittingRange), Self.flatRange)
         if done { UserDefaults.standard.set(dbRange, forKey: "spectrumRange") }
     }
+
+    private static let belowFloor: Float = 15
+    private static let flatRange: Float = 1500    // the shortest setting: the trace is close to a flat line
 
     func refreshColours() { onair_colormap(&colours, Int32(colours.count)) }
 
@@ -118,6 +126,7 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
         let sample = stride(from: 0, to: Self.binCount, by: 16).map { bins[$0] }.sorted()
         let floorNow = sample[sample.count / 5]
         noiseFloor = noiseFloor < -500 ? floorNow : noiseFloor + (floorNow - noiseFloor) * 0.05
+        peakHold = max(bins.max() ?? peakHold, peakHold - 0.05)
         let low = noiseFloor - 3, range: Float = 45
         for i in 0..<Self.binCount {
             let level = min(max((bins[i] - low) / range, 0), 1)
@@ -153,7 +162,7 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
 
         let columns = max(min(Int(view.drawableSize.width / 2), 800), 2)
         let top: Float = 1, bottom = Self.split
-        let low = noiseFloor - 15, range = dbRange
+        let low = noiseFloor - Self.belowFloor, range = max(dbRange, fittingRange)
         var fill = [SIMD3<Float>](), line = [SIMD3<Float>]()
         fill.reserveCapacity(columns * 2)
         line.reserveCapacity(columns)
@@ -252,7 +261,7 @@ private struct SpectrumGestures: UIViewRepresentable {
                 lastHeight = y
             }
             if mode == .pan { parent?.pan(x - lastPan, done) }
-            if mode == .height { parent?.height(Float(exp(Double(y - lastHeight) / 180)), done) }   // up: taller signals
+            if mode == .height { parent?.height(Float(exp(Double(y - lastHeight) / 110)), done) }   // up: taller signals
             lastPan = x
             lastHeight = y
             if done { finish() }
