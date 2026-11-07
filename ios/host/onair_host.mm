@@ -850,7 +850,10 @@ const char* onair_verify_line(void) {
     char head[200];
     snprintf(head, sizeof head, " running=%d std=%d audioSec=%.1f videoFrames=%llu services=%zu tsPackets=%llu rate=%.2f json=", a.engine.running() ? 1 : 0, a.rx.standard,
              dect2::audioIosPlayedFrames() / 48000.0, (unsigned long long)gVideoFrames, a.ts.services.size(), (unsigned long long)a.ts.totalPackets, a.engine.sampleRate() / 1e6);
-    gJson = head + std::string("[") + gVideoStatus + "] " + json.substr(0, 900);
+    const dect2::SampleLoss loss = a.engine.sampleLoss();
+    char lossText[160];
+    snprintf(lossText, sizeof lossText, " delivered=%.1f load=%.0f radioLost=%.1f cpuLost=%.1f", loss.deliveredPct, loss.loadPct, loss.radioSec, loss.cpuSec);
+    gJson = head + std::string(lossText) + " [" + gVideoStatus + "] " + json.substr(0, 900);
     return gJson.c_str();
 }
 
