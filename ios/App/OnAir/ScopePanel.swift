@@ -264,7 +264,7 @@ private struct ScopeWindow: View {
         let gain = CGFloat(analyser.scaleForScope(peak: mono[start..<(start + shown)].map(abs).max() ?? 0))
         var path = Path()
         for i in 0..<shown {
-            let point = CGPoint(x: size.width * CGFloat(i) / CGFloat(shown - 1), y: size.height / 2 * (1 - gain * CGFloat(mono[start + i]) * 1.6))
+            let point = CGPoint(x: size.width * CGFloat(i) / CGFloat(shown - 1), y: size.height / 2 * (1 - gain * CGFloat(mono[start + i])))
             if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
         phosphor(context, path)

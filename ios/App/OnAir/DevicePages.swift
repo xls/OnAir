@@ -5,6 +5,7 @@ import SwiftUI
 struct SourcePage: View {
     let receiver: Receiver
     @State private var showAdd = false
+    @State private var antenna: Setting?
 
     var body: some View {
         PanelPage {
@@ -25,6 +26,16 @@ struct SourcePage: View {
                     .buttonStyle(.plain)
                 }
             }
+            if let antenna {
+                PanelSection(title: "Antenna") {
+                    PanelRow(label: "Receive on", help: "Radios with two receivers. Changing it restarts the radio.") {
+                        SelectorWindow(selected: antenna.names[antenna.values.firstIndex(of: antenna.value) ?? 0], options: antenna.names) { index in
+                            onair_radio_setting_set("antenna", antenna.values[index])
+                            loadAntenna()
+                        }
+                    }
+                }
+            }
             HardwareKey(action: { showAdd = true }) {
                 EngravedLabel(text: "ADD NETWORK RADIO", size: 9)
             }
@@ -34,6 +45,18 @@ struct SourcePage: View {
         .sheet(isPresented: $showAdd) {
             RadioSheet()
         }
+        .onAppear(perform: loadAntenna)
+        .onChange(of: receiver.status.source) { loadAntenna() }
+    }
+
+    private struct Setting: Decodable {
+        let key, value: String
+        let values, names: [String]
+    }
+
+    private func loadAntenna() {
+        guard let text = onair_radio_settings_json() else { return }
+        antenna = (try? JSONDecoder().decode([Setting].self, from: Data(String(cString: text).utf8)))?.first { $0.key == "antenna" }
     }
 }
 
