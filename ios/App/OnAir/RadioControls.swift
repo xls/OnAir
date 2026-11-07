@@ -491,7 +491,7 @@ struct SelectorWindow: View {
 
     var body: some View {
         Menu {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, name in
+            ForEach(Array(options.enumerated()).filter { !$0.element.isEmpty }, id: \.offset) { index, name in
                 Button(name) { choose(index) }
             }
         } label: {

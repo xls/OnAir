@@ -60,7 +60,7 @@ struct RootView: View {
     @State private var devicePage = DevicePage.source
     @State private var started = false
     @State private var autoSelected = false
-    @State private var showOptions = false
+    @State private var drawer: DrawerKind?
     @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -76,7 +76,10 @@ struct RootView: View {
                 Color.black
                 nativePage
                 if started && tab != .device && tab != .settings && !receiver.videoFullscreen {
-                    DrawerHandle { showOptions = true }
+                    DrawerHandle(hasScan: receiver.status.scan) { kind in withAnimation(.easeOut(duration: 0.22)) { drawer = kind } }
+                }
+                if let drawer {
+                    SideDrawer(mode: receiver.status.mode, kind: drawer) { withAnimation(.easeOut(duration: 0.2)) { self.drawer = nil } }
                 }
             }
             if !receiver.videoFullscreen {
@@ -84,9 +87,6 @@ struct RootView: View {
             }
         }
         .background(BrushedMetal(tone: 0.46).ignoresSafeArea())
-        .sheet(isPresented: $showOptions) {
-            OptionsDrawer(mode: receiver.status.mode)
-        }
         .statusBarHidden(receiver.videoFullscreen)
         .persistentSystemOverlays(receiver.videoFullscreen ? .hidden : .automatic)
         .onReceive(tick) { _ in
@@ -185,7 +185,8 @@ struct RootView: View {
             label = name
         }
         if let path = value("--tx-file") { transmitToFile(path, mode: value("--mode") ?? "") }
-        if args.contains("--open-options") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showOptions = true } }
+        if args.contains("--open-options") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { drawer = .settings } }
+        if args.contains("--open-scan") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { drawer = .scan } }
         if args.contains("--options") {
             onair_options_watch(true)
             if let change = value("--set-option"), let split = change.firstIndex(of: "=") {   // label=value, by the same path as a native control

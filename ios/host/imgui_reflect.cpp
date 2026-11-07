@@ -3,6 +3,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +36,11 @@ bool Orig_SmallButton(const char*);
 bool Orig_CollapsingHeader(const char*, ImGuiTreeNodeFlags);
 bool Orig_CollapsingHeader(const char*, bool*, ImGuiTreeNodeFlags);
 void Orig_TextUnformatted(const char*, const char*);
+void Orig_PushID(const char*);
+void Orig_PushID(const char*, const char*);
+void Orig_PushID(const void*);
+void Orig_PushID(int);
+bool Orig_InvisibleButton(const char*, const ImVec2&, ImGuiButtonFlags);
 bool Orig_BeginTabBar(const char*, ImGuiTabBarFlags);
 void Orig_EndTabBar();
 bool Orig_BeginTabItem(const char*, bool*, ImGuiTabItemFlags);
@@ -50,7 +56,7 @@ void Orig_SetItemTooltipV(const char*, va_list);
 namespace {
 struct Item {
     unsigned id = 0;
-    std::string kind, label, section, value, help;
+    std::string kind, label, section, value, help, preview;
     bool guessed = false;   // the label is only the text that stood before it
     double lo = 0, hi = 0;
     std::vector<std::string> options;
@@ -65,6 +71,8 @@ std::set<unsigned> gSeen;
 int gCombo = -1;   // an index: a panel may add more items inside an open combo, which moves the list
 int gOption = 0;
 bool gInTooltip = false;
+bool gNotes = false;
+std::string gPushed;   // the text of the last PushID: icon buttons keep their name there
 
 std::string visible(const char* label) {   // the part of a label ImGui shows
     std::string s = label ? label : "";
@@ -82,7 +90,7 @@ Item* add(const char* kind, const char* label) {
     it.kind = kind;
     it.label = visible(label);
     if (it.label.empty()) { it.label = gLastText; it.guessed = true; }
-    it.section = gSection;
+    it.section = gNotes && gSection != "Scan" ? "Scan: " + gSection : gSection;
     it.disabled = (GImGui->CurrentItemFlags & ImGuiItemFlags_Disabled) != 0;
     gItems.push_back(std::move(it));
     gLastText.clear();
@@ -115,6 +123,25 @@ bool choice(const char* label, int* current, int count, const std::vector<std::s
 }
 }   // namespace
 
+static int gNoteCount = 0;
+
+static std::string lower(std::string s) { for (char& c : s) c = (char)tolower((unsigned char)c); return s; }
+
+// Something that opens a desktop window, panel, dialog or folder does nothing on the phone, so it is never offered
+static bool desktopOnly(const std::string& text) {
+    const std::string t = lower(text);
+    for (const char* word : {"...", "\xE2\x80\xA6", "panel", "window", "folder", "dialog", "browse", "open ", "copy", "export", "import", "save results", "shared data", "scanner", "second mode"})
+        if (t.find(word) != std::string::npos) return true;
+    return false;
+}
+
+// A button is shown only when it is an action known to work here. Everything else (band shortcuts the native pages have, file and view buttons) stays off
+static bool workingButton(const std::string& label) {
+    const std::string t = lower(label);
+    if (desktopOnly(t) || t == "scan") return false;   // "Scan" alone switches the desktop's view
+    for (const char* word : {"scan ", "stop", "start", "clear", "reset", "skip", "record"}) if (t.rfind(word, 0) == 0) return true;
+    return false;
+}
 static std::string shortHelp(const std::string& help) {   // a name for a control that has only a tooltip
     size_t cut = help.find_first_of(".:,(;\n");
     if (cut == std::string::npos || cut > 40) cut = std::min<size_t>(help.size(), 40);
@@ -124,6 +151,7 @@ static std::string shortHelp(const std::string& help) {   // a name for a contro
 namespace reflect {
 void begin() { gOn = true; gItems.clear(); gSeen.clear(); gSection.clear(); gLastText.clear(); gCombo = -1; }
 void section(const char* title) { gSection = title; }
+void notes(bool on) { gNotes = on; if (on) { gSection = "Scan"; gNoteCount = 0; } }
 void edit(unsigned id, const std::string& value) { gEditId = id; gEditValue = value; gHasEdit = true; }
 bool editPending() { return gHasEdit; }
 
@@ -134,9 +162,12 @@ std::string end() {
     for (Item& it : gItems) {
         const bool readout = it.guessed && it.label.find_first_of("0123456789") != std::string::npos;
         if ((it.label.empty() || readout) && !it.help.empty()) it.label = shortHelp(it.help);
+        if (it.kind == "button" && !workingButton(it.label)) continue;
+        if (it.kind != "note" && desktopOnly(it.label)) continue;
+        if (it.label == "Compute") continue;   // where the error correction runs: stays on Auto, there is nothing on the phone to see from it
         if (j.size() > 1) j += ",";
         j += "{\"id\":" + std::to_string(it.id) + ",\"kind\":\"" + it.kind + "\",\"label\":\"" + dect2::jsonEscape(it.label) + "\",\"section\":\"" + dect2::jsonEscape(it.section) +
-             "\",\"help\":\"" + dect2::jsonEscape(it.help) + "\",\"value\":\"" + dect2::jsonEscape(it.value) + "\",\"lo\":" + num(it.lo) + ",\"hi\":" + num(it.hi) + ",\"disabled\":" + (it.disabled ? "true" : "false") + ",\"options\":[";
+             "\",\"help\":\"" + dect2::jsonEscape(it.help) + "\",\"preview\":\"" + dect2::jsonEscape(it.preview) + "\",\"value\":\"" + dect2::jsonEscape(it.value) + "\",\"lo\":" + num(it.lo) + ",\"hi\":" + num(it.hi) + ",\"disabled\":" + (it.disabled ? "true" : "false") + ",\"options\":[";
         for (size_t i = 0; i < it.options.size(); i++) j += std::string(i ? "," : "") + "\"" + dect2::jsonEscape(it.options[i]) + "\"";
         j += "]}";
     }
@@ -158,6 +189,7 @@ bool BeginCombo(const char* label, const char* preview, ImGuiComboFlags flags) {
     Item* item = add("choice", label);
     if (!item) return false;
     item->value = "-1";
+    item->preview = visible(preview);
     gCombo = (int)gItems.size() - 1;
     gOption = 0;
     PushID(label);   // what the panel's Selectable lines and PushIDs see stays the same at every pass
@@ -195,7 +227,7 @@ static bool option(const char* label, bool selected) {
     if (gCombo < 0) return false;
     Item& combo = gItems[(size_t)gCombo];
     const int index = gOption++;
-    combo.options.push_back(visible(label));
+    combo.options.push_back(desktopOnly(label) ? std::string() : visible(label));   // blank keeps the numbering of the rest
     if (selected) combo.value = std::to_string(index);
     return gHasEdit && combo.id == gEditId && atoi(gEditValue.c_str()) == index;
 }
@@ -280,6 +312,16 @@ static void remember(const char* text, const char* end = nullptr) {
         return;
     }
     if (!gItems.empty() && gItems.back().label.empty()) gItems.back().label = t.substr(0, 40);   // a list row: its name comes after the box
+    if (gNotes && gCombo < 0 && !t.empty() && gNoteCount < 8) {
+        gNoteCount++;
+        Item note;
+        note.id = ImHashStr(t.c_str());
+        note.kind = "note";
+        note.label = t;
+        note.section = gSection == "Scan" ? gSection : "Scan: " + gSection;
+        if (gSeen.insert(note.id).second) gItems.push_back(std::move(note));
+        return;
+    }
     gLastText = t.substr(0, 60);
 }
 
@@ -300,6 +342,21 @@ void SetTooltipV(const char* fmt, va_list args) { if (gOn) tooltip(fmt, args); e
 void SetItemTooltipV(const char* fmt, va_list args) { if (gOn) tooltip(fmt, args); else Orig_SetItemTooltipV(fmt, args); }
 void SetTooltip(const char* fmt, ...) { va_list args; va_start(args, fmt); SetTooltipV(fmt, args); va_end(args); }
 void SetItemTooltip(const char* fmt, ...) { va_list args; va_start(args, fmt); SetItemTooltipV(fmt, args); va_end(args); }
+
+void PushID(const char* id) { if (gOn) gPushed = id; Orig_PushID(id); }
+void PushID(const char* begin, const char* end) { Orig_PushID(begin, end); }
+void PushID(const void* id) { Orig_PushID(id); }
+void PushID(int id) { Orig_PushID(id); }
+
+bool InvisibleButton(const char* id, const ImVec2& size, ImGuiButtonFlags flags) {
+    if (!gOn) return Orig_InvisibleButton(id, size, flags);
+    const bool hit = edited(id);
+    if (!gPushed.empty()) {   // an icon button with words on it; the bare ones are plots and sliders of their own
+        if (Item* it = add("button", id)) { it->label = visible(gPushed.c_str()); it->guessed = false; }
+        gPushed.clear();
+    }
+    return hit;
+}
 
 bool BeginTabBar(const char* id, ImGuiTabBarFlags flags) { return gOn ? true : Orig_BeginTabBar(id, flags); }
 void EndTabBar() { if (!gOn) Orig_EndTabBar(); }

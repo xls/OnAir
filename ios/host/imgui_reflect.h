@@ -7,6 +7,7 @@
 namespace reflect {
 void begin();                                       // the widgets report from here on
 void section(const char* title);                    // the heading of what follows
+void notes(bool on);                                // text counts too (a scan says what it is doing), under the heading "Scan"
 std::string end();                                  // JSON: [{id, kind, label, section, value, min, max, options, disabled}]
 void edit(unsigned id, const std::string& value);   // applied in the next pass
 bool editPending();

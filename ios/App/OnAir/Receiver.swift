@@ -14,6 +14,7 @@ final class Receiver {
         var muted = false
         var family = -1
         var error = ""
+        var scan = false
     }
 
     struct Rate: Decodable, Equatable {

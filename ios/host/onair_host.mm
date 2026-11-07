@@ -141,6 +141,11 @@ void feedFingers() {   // touch::feedPointer wants every finger, every frame, be
     for (const Finger& f : gFingers) touch::feedPointer(f.id, f.x, f.y, true);
 }
 
+bool modeHasScan(const App& a) {
+    const ModeUi* m = modeUi(a.family);
+    return a.fmMode || a.dabMode || (m && m->scan);   // TV has its own native scan page
+}
+
 // The current mode's panels, read for the native drawers: see imgui_reflect.h
 bool gOptionsWanted = false;
 std::string gOptions = "[]";
@@ -150,7 +155,15 @@ void readOptions(App& a) {
     gOptionsCountdown = 3;
     reflect::begin();
     bool retune = false;
-    if (const ModeUi* m = modeUi(a.family)) {
+    const ModeUi* mode = modeUi(a.family);
+    if (modeHasScan(a)) {
+        ImGui::PushID("scan");
+        reflect::notes(true);
+        scanTab(a);
+        reflect::notes(false);
+        ImGui::PopID();
+    }
+    if (const ModeUi* m = mode) {
         ImGui::PushID("drawer");
         if (m->tuner) { reflect::section("Tuning"); m->tuner(a, retune); }
         if (m->decoder) { reflect::section("Decoder"); m->decoder(a, retune); }
@@ -951,7 +964,7 @@ const char* onair_status_json(void) {
     const std::string source = a.devIdx >= 0 && a.devIdx < (int)a.devices.size() ? a.devices[(size_t)a.devIdx].name : "";
     gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
               dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +
-              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
+              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"scan\":" + (modeHasScan(a) ? "true" : "false") + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
     return gStatus.c_str();
 }
 

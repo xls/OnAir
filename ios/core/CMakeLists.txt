@@ -20,12 +20,12 @@ target_include_directories(dect2 PRIVATE include ../host "${_onair_repo}/android
 
 # The widgets the native drawers read keep their names for ../host/imgui_reflect.cpp, which wraps them; imgui_widgets.cpp itself is untouched
 set(_reflect_defs "")
-foreach(w Checkbox BeginCombo EndCombo Combo Selectable SliderFloat SliderInt InputDouble InputFloat InputInt InputText InputTextWithHint RadioButton Button SmallButton CollapsingHeader TextUnformatted Text TextColored TextDisabled TextWrapped BeginTabBar EndTabBar BeginTabItem EndTabItem)
+foreach(w Checkbox BeginCombo EndCombo Combo Selectable SliderFloat SliderInt InputDouble InputFloat InputInt InputText InputTextWithHint RadioButton Button SmallButton CollapsingHeader TextUnformatted Text TextColored TextDisabled TextWrapped BeginTabBar EndTabBar BeginTabItem EndTabItem InvisibleButton)
   list(APPEND _reflect_defs "${w}=Orig_${w}")
 endforeach()
 set_property(SOURCE "${_onair_repo}/third_party/imgui/imgui_widgets.cpp" TARGET_DIRECTORY imgui APPEND PROPERTY COMPILE_DEFINITIONS ${_reflect_defs})
 set(_reflect_defs "")
-foreach(w IsItemHovered BeginTooltip EndTooltip SetTooltip SetTooltipV BeginItemTooltip SetItemTooltip SetItemTooltipV)
+foreach(w PushID IsItemHovered BeginTooltip EndTooltip SetTooltip SetTooltipV BeginItemTooltip SetItemTooltip SetItemTooltipV)
   list(APPEND _reflect_defs "${w}=Orig_${w}")
 endforeach()
 set_property(SOURCE "${_onair_repo}/third_party/imgui/imgui.cpp" TARGET_DIRECTORY imgui APPEND PROPERTY COMPILE_DEFINITIONS ${_reflect_defs})

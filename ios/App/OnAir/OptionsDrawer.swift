@@ -4,45 +4,89 @@ import SwiftUI
 /// One setting of the current mode, as its desktop panel declares it (ios/host/imgui_reflect.h).
 struct PanelOption: Decodable, Identifiable {
     let id: UInt32
-    let kind, label, section, value, help: String
+    let kind, label, section, value, help, preview: String
     let lo, hi: Double
     let disabled: Bool
     let options: [String]
 }
 
-/// The tab that pulls the settings drawer up: tap it or swipe it.
+enum DrawerKind: String, Identifiable {
+    case settings, scan
+    var id: Self { self }
+}
+
+/// The tabs on the right edge that pull the drawers in: tap one or swipe it to the left.
 struct DrawerHandle: View {
-    let open: () -> Void
+    let hasScan: Bool
+    let open: (DrawerKind) -> Void
 
     var body: some View {
-        VStack(spacing: 2) {
-            Capsule().fill(Color.white.opacity(0.55)).frame(width: 34, height: 3)
-            EngravedLabel(text: "SETTINGS", size: 7)
+        VStack(spacing: 8) {
+            if hasScan { tab("SCAN", .scan) }
+            tab("SETTINGS", .settings)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 5)
-        .padding(.bottom, 3)
-        .background(BrushedMetal(tone: 0.52).clipShape(UnevenRoundedRectangle(topLeadingRadius: 9, topTrailingRadius: 9)))
-        .shadow(color: .black.opacity(0.5), radius: 3, y: -1)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+    }
+
+    private func tab(_ title: String, _ kind: DrawerKind) -> some View {
+        HStack(spacing: 3) {
+            Capsule().fill(Color.white.opacity(0.55)).frame(width: 3, height: 26)
+            Text(title)
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color(white: 0.08))
+                .fixedSize()
+                .rotationEffect(.degrees(-90))
+                .frame(width: 9, height: title.count > 4 ? 56 : 30)
+        }
+        .padding(.leading, 3)
+        .padding(.trailing, 2)
+        .padding(.vertical, 8)
+        .background(BrushedMetal(tone: 0.52).clipShape(UnevenRoundedRectangle(topLeadingRadius: 8, bottomLeadingRadius: 8)))
+        .shadow(color: .black.opacity(0.5), radius: 3, x: -1)
         .contentShape(Rectangle())
-        .onTapGesture(perform: open)
-        .gesture(DragGesture(minimumDistance: 8).onEnded { if $0.translation.height < 0 { open() } })
-        .frame(maxHeight: .infinity, alignment: .bottom)
-        .accessibilityLabel("Settings for this mode")
+        .onTapGesture { open(kind) }
+        .gesture(DragGesture(minimumDistance: 6).onEnded { if $0.translation.width < 0 { open(kind) } })
+        .accessibilityLabel(title == "SCAN" ? "Scan" : "Settings for this mode")
         .accessibilityAddTraits(.isButton)
     }
 }
 
-/// Every setting of the current mode, in native controls. It rises halfway so the page stays in view while you change things.
+/// A drawer that slides in from the right over the page. The top bar and the bottom keys stay in view, and so does a strip of the page.
+struct SideDrawer: View {
+    let mode: String
+    let kind: DrawerKind
+    let close: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Color.black.opacity(0.3).contentShape(Rectangle()).onTapGesture(perform: close).transition(.opacity)
+            HStack(spacing: 0) {
+                Capsule().fill(Color.white.opacity(0.5)).frame(width: 4, height: 44).padding(.horizontal, 4)
+                OptionsDrawer(mode: mode, kind: kind)
+            }
+            .background(BrushedMetal(tone: 0.46))
+            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12))
+            .shadow(color: .black.opacity(0.6), radius: 8, x: -3)
+            .padding(.leading, 40)
+            .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
+                if value.translation.width > 70, abs(value.translation.width) > abs(value.translation.height) { close() }
+            })
+            .transition(.move(edge: .trailing))
+        }
+    }
+}
+
+/// Every setting of the current mode, in native controls.
 struct OptionsDrawer: View {
     let mode: String
+    var kind = DrawerKind.settings
     @State private var all: [PanelOption] = []
     @State private var query = ""
     @State private var text = ""
     @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     private var shown: [PanelOption] {
-        all.filter { !$0.label.isEmpty && (query.isEmpty || $0.label.localizedCaseInsensitiveContains(query) || $0.help.localizedCaseInsensitiveContains(query) || $0.section.localizedCaseInsensitiveContains(query)) }
+        all.filter { $0.section.hasPrefix("Scan") == (kind == .scan) && !$0.label.isEmpty && (query.isEmpty || $0.label.localizedCaseInsensitiveContains(query) || $0.help.localizedCaseInsensitiveContains(query) || $0.section.localizedCaseInsensitiveContains(query)) }
     }
 
     private var sections: [(String, [PanelOption])] {
@@ -60,7 +104,7 @@ struct OptionsDrawer: View {
             GlassWindow(corner: 6) {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(RadioTheme.amber)
-                    TextField("", text: $query, prompt: Text("SEARCH \(mode.uppercased())").foregroundStyle(RadioTheme.amber.opacity(0.4)))
+                    TextField("", text: $query, prompt: Text(kind == .scan ? "SEARCH SCAN" : "SEARCH \(mode.uppercased())").foregroundStyle(RadioTheme.amber.opacity(0.4)))
                         .font(.system(size: 13, design: .monospaced))
                         .foregroundStyle(RadioTheme.amber)
                         .textInputAutocapitalization(.never)
@@ -77,9 +121,6 @@ struct OptionsDrawer: View {
                 OptionSection(title: title, options: options)
             }
         }
-        .presentationDetents([.medium, .large])
-        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-        .presentationDragIndicator(.visible)
         .onAppear {
             onair_options_watch(true)
             load()
@@ -131,7 +172,17 @@ private struct OptionSection: View {
         PanelSection(title: title.isEmpty ? "Options" : title) {
             ForEach(parts) { part in
                 switch part {
-                case .single(let option): OptionRow(option: option)
+                case .single(let option):
+                    if option.kind == "note" {
+                        Text(option.label)
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(RadioTheme.amber.opacity(0.75))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                    } else {
+                        OptionRow(option: option)
+                    }
                 case .radios(let group): radios(group)
                 }
             }
@@ -180,7 +231,11 @@ private struct OptionRow: View {
                 }
             case "choice":
                 PanelRow(label: option.label, help: option.help) {
-                    SelectorWindow(selected: selected, options: option.options) { onair_option_set(option.id, String($0)) }
+                    if option.options.allSatisfy(\.isEmpty) {
+                        Text(option.preview).font(.system(size: 12, design: .monospaced)).foregroundStyle(RadioTheme.amber.opacity(0.6))
+                    } else {
+                        SelectorWindow(selected: selected, options: option.options) { onair_option_set(option.id, String($0)) }
+                    }
                 }
             case "slider":
                 VStack(spacing: 0) {
@@ -220,7 +275,7 @@ private struct OptionRow: View {
     }
 
     private var selected: String {
-        guard let index = Int(option.value), option.options.indices.contains(index) else { return "Choose" }
+        guard let index = Int(option.value), option.options.indices.contains(index) else { return option.preview.isEmpty ? "Choose" : option.preview }
         return option.options[index]
     }
 
