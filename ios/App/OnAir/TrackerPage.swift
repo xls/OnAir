@@ -114,7 +114,9 @@ struct TrackerPage: View {
                 .mapStyle(.hybrid(elevation: .realistic))
                 header
             }
-            if targets.isEmpty {
+            if let card {
+                card.frame(maxHeight: 280)
+            } else if targets.isEmpty {
                 ScrollView {
                     VStack(spacing: 8) {
                         if let summary = results.summary { Text(summary).font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
@@ -134,6 +136,10 @@ struct TrackerPage: View {
             load()
         }
         .onChange(of: location.coordinate?.latitude) { centreOnStation() }
+        .onChange(of: selected) { _, id in
+            guard let id, let coordinate = targets.first(where: { $0.id == id })?.coordinate else { return }
+            withAnimation { camera = .camera(MapCamera(centerCoordinate: coordinate, distance: 120_000)) }
+        }
         .onReceive(tick) { _ in load() }
     }
 
@@ -160,9 +166,23 @@ struct TrackerPage: View {
         .padding(10)
     }
 
+    /// The selected target, while it is still heard. Every decoded column with a value, in plain words.
+    private var card: TargetCard? {
+        guard let selected, let table = results.tables?.first(where: { $0.column("Lat", "Pos", "Position") != nil }),
+              let target = targets.first(where: { $0.id == selected }) else { return nil }
+        guard let row = table.rows.first(where: { $0.contains(selected) }) else { return nil }
+        let names = ["Alt ft": "Altitude", "Spd kt": "Speed", "Hdg": "Heading", "VS fpm": "Climb", "Dist nm": "Distance", "Sqk": "Squawk", "Msgs": "Messages", "Age s": "Last heard"]
+        let units = ["Alt ft": " ft", "Spd kt": " kt", "Hdg": "°", "VS fpm": " ft/min", "Dist nm": " nm", "Age s": " s ago"]
+        let fields: [(String, String)] = zip(table.cols, row).compactMap { column, value in
+            guard !value.isEmpty, column != "Callsign", column != "Lat", column != "Lon" else { return nil }
+            return (names[column] ?? column, value + (units[column] ?? ""))
+        }
+        let hex = table.column("ICAO") != nil && selected.count == 6 ? selected : nil
+        return TargetCard(title: target.title, fields: fields, hex: hex, callsign: table.value(row, "Callsign").trimmingCharacters(in: .whitespaces)) { self.selected = nil }
+    }
+
     private var list: some View {
-        ScrollViewReader { scroller in
-            List(targets, selection: $selected) { target in
+        List(targets, selection: $selected) { target in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(target.title).font(.body.weight(.medium).monospaced())
@@ -172,17 +192,8 @@ struct TrackerPage: View {
                     if target.coordinate != nil { Image(systemName: "mappin").foregroundStyle(.secondary) }
                 }
                 .tag(target.id)
-                .id(target.id)
             }
             .listStyle(.plain)
-            .onChange(of: selected) { _, id in
-                guard let id else { return }
-                scroller.scrollTo(id)
-                if let coordinate = targets.first(where: { $0.id == id })?.coordinate {
-                    withAnimation { camera = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 60000, longitudinalMeters: 60000)) }
-                }
-            }
-        }
     }
 
     private func load() {
@@ -190,5 +201,7 @@ struct TrackerPage: View {
         results = new
         let next = Target.all(from: new)
         if next != targets { targets = next }
+        if let id = selected, !next.contains(where: { $0.id == id }) { selected = nil }   // it has gone out of range
+        if selected == nil, ProcessInfo.processInfo.arguments.contains("--select-first") { selected = located.first?.id }
     }
 }
