@@ -48,6 +48,7 @@ void AudioOut::Impl::render(float* out, uint32_t nFrames) {
             out[2 * i + 1] = ring[k + 1];
         }
         leveler.process(out, (int)n);
+        if (tap) tap(out, n);
         for (uint32_t i = 0; i < 2 * n; i++) out[i] *= vol;
         r.store(rd + n, std::memory_order_release);
         played.fetch_add(n);

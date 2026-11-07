@@ -34,6 +34,7 @@ struct AudioOut::Impl {
     std::atomic<int> startThreshold{14400};
     std::atomic<bool> playing{false};
     std::atomic<bool> flushReq{false};
+    void (*tap)(const float* stereo, uint32_t frames) = nullptr;   // the sound before volume and mute, from the real-time thread (a platform's level meters)
     // Fills `out` (interleaved stereo float) with `nFrames` frames: queued audio, or silence while (re)buffering.
     void render(float* out, uint32_t nFrames);
 };

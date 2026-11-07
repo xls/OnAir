@@ -34,6 +34,14 @@ private final class AudioAnalyser {
         if history.count > Self.historyRows { history.removeLast() }
     }
 
+    private var scopePeak: Float = 0
+
+    /// Follows the loudest of the last moment: up at once, down slowly, so the trace does not pump.
+    func scaleForScope(peak: Float) -> Float {
+        scopePeak = max(peak, scopePeak * 0.985)
+        return 0.85 / max(scopePeak, 0.005)
+    }
+
     func holdPeak(_ channel: Int, _ level: Float) { peaks[channel] = max(level, peaks[channel] - 0.006) }
     func peak(_ channel: Int) -> Float { peaks[channel] }
 
@@ -252,9 +260,11 @@ private struct ScopeWindow: View {
             start = i
             break
         }
+        // like an oscilloscope on auto: quiet programme still fills the screen, and true silence stays a line
+        let gain = CGFloat(analyser.scaleForScope(peak: mono[start..<(start + shown)].map(abs).max() ?? 0))
         var path = Path()
         for i in 0..<shown {
-            let point = CGPoint(x: size.width * CGFloat(i) / CGFloat(shown - 1), y: size.height / 2 * (1 - CGFloat(mono[start + i]) * 1.6))
+            let point = CGPoint(x: size.width * CGFloat(i) / CGFloat(shown - 1), y: size.height / 2 * (1 - gain * CGFloat(mono[start + i]) * 1.6))
             if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
         phosphor(context, path)

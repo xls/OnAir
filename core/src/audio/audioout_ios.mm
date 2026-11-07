@@ -15,15 +15,18 @@ static constexpr uint32_t kTapFrames = 8192;
 static float gTap[kTapFrames * 2];
 static std::atomic<uint32_t> gTapWrite{0};
 
-static OSStatus renderCb(void* ref, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32, UInt32 nFrames, AudioBufferList* io) {
-    float* out = (float*)io->mBuffers[0].mData;
-    static_cast<AudioOut::Impl*>(ref)->render(out, nFrames);
+// before volume and mute: the scopes show the signal, not the slider
+static void keepForScopes(const float* stereo, uint32_t frames) {
     uint32_t w = gTapWrite.load(std::memory_order_relaxed);
-    for (UInt32 i = 0; i < nFrames; i++, w++) {
-        gTap[(w % kTapFrames) * 2] = out[i * 2];
-        gTap[(w % kTapFrames) * 2 + 1] = out[i * 2 + 1];
+    for (uint32_t i = 0; i < frames; i++, w++) {
+        gTap[(w % kTapFrames) * 2] = stereo[i * 2];
+        gTap[(w % kTapFrames) * 2 + 1] = stereo[i * 2 + 1];
     }
     gTapWrite.store(w, std::memory_order_release);
+}
+
+static OSStatus renderCb(void* ref, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32, UInt32 nFrames, AudioBufferList* io) {
+    static_cast<AudioOut::Impl*>(ref)->render((float*)io->mBuffers[0].mData, nFrames);
     return noErr;
 }
 
@@ -60,6 +63,7 @@ static bool activateSession() {
 
 bool audioBackendStart(AudioOut::Impl* I, int rate) {
     if (!activateSession()) return false;
+    I->tap = keepForScopes;
     AudioComponentDescription d = {kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple, 0, 0};
     AudioComponent c = AudioComponentFindNext(nullptr, &d);
     AudioUnit unit = nullptr;
