@@ -159,6 +159,7 @@ struct TVPage: View {
 
     @State private var autoMessage = ""
     @AppStorage("tvZoomed") private var zoomed = false
+    private static let cornerInset: CGFloat = 60   // full screen runs under the rounded corners and the Dynamic Island
     @State private var controlsShown = true
     @State private var lastTap = Date.distantPast
     @State private var hideTimer: DispatchWorkItem?
@@ -199,7 +200,8 @@ struct TVPage: View {
                             .background(.ultraThinMaterial, in: Circle())
                     }
                 }
-                .padding(10)
+                .padding(.horizontal, receiver.videoFullscreen ? Self.cornerInset : 10)
+                .padding(.vertical, receiver.videoFullscreen ? 16 : 10)
                 .opacity(controlsShown ? 1 : 0)
                 .allowsHitTesting(controlsShown)
             }
@@ -211,7 +213,8 @@ struct TVPage: View {
                         .padding(.horizontal, 12)
                         .frame(height: 44)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .padding(10)
+                        .padding(.horizontal, Self.cornerInset)
+                        .padding(.vertical, 16)
                         .transition(.opacity)
                 }
             }
