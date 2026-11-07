@@ -147,7 +147,7 @@ private struct OscillatorRow: View {
     }
 }
 
-/// Every mode, grouped and searchable. All 183 come from the C++ table.
+/// Every mode, grouped and searchable, from the C++ table (less the desktop-only rows).
 struct ModeBrowser: View {
     private struct Row: Identifiable {
         let id: Int32
@@ -162,7 +162,9 @@ struct ModeBrowser: View {
     @AppStorage("modesNativeOnly") private var nativeOnly = false
     @AppStorage("modesFavoritesOnly") private var favoritesOnly = false
     @AppStorage("modeFavorites") private var favoritesText = ""
-    private static let rows: [Row] = (0..<onair_mode_count()).map {
+    /// Plugins (999) and the Mode Builder's custom decoders (19999) are desktop tools, as are plugin modes (1000 and up).
+    private static func desktopOnly(_ family: Int32) -> Bool { family == 999 || family == 19999 || (family >= 1000 && family < 19999) }
+    private static let rows: [Row] = (0..<onair_mode_count()).filter { !desktopOnly(onair_mode_family($0)) }.map {
         let name = String(cString: onair_mode_name($0))
         return Row(id: $0, name: name, group: String(cString: onair_mode_group($0)), blurb: String(cString: onair_mode_blurb($0)),
                    native: OnAirFamily.hasNativeScreen(family: Int(onair_mode_family($0)), mode: name))
