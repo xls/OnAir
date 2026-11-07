@@ -38,16 +38,16 @@ Last full sweep: 183 of 183 modes start with the settings drawer open and none c
 | Screen | Measured | Not yet done |
 |---|---|---|
 | FM | Real stations through the E310 on the iPhone, with scopes | Long listening test |
-| Spectrum | 60 fps on the iPhone; filter box; two-finger height from flat to just unclipped, checked by setting the range | Drag by finger |
-| TV | Real channels scanned on the iPhone (the user's check). DVB-T picture and sound from the test signal; H.264 and MPEG-2 from files; automatic detection; Internet TV. Channel list by frequency, grid guide with made-up programmes, fit and zoom full screen | Real guide data; retuning between frequencies by a tap; DVB-T2 video in the app |
+| Spectrum | 60 fps on the iPhone; filter box; two-finger height from flat to just unclipped, checked by setting the range | |
+| TV | Real DVB-T channels scanned and watched on the iPhone (the user's check), with guide, tuning between frequencies and full screen. DVB-T picture and sound from the test signal; H.264 and MPEG-2 from files; automatic detection; Internet TV. Channel list by frequency, grid guide with made-up programmes, fit and zoom full screen | DVB-T2 video in the app |
 | Ham, Shortwave, General | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW; band keys and steps follow the demodulator | Below 70 MHz on the E310 needs a converter; never transmitted on air |
 | Broadcast | DAB+, DRM, AM and shortwave with audio from test signals. HD Radio locks | No sound for HD Radio (HDC) or CDR (DRA+): those codecs are not available |
-| Trackers | Real ADS-B aircraft on the iPhone through RX2. AIS, APRS, UAT and Horus from test signals. Target card with aircraft details from adsbdb | The card seen on the iPhone |
+| Trackers | Real ADS-B aircraft on the iPhone through RX2. AIS, APRS, UAT and Horus from test signals. Target card with aircraft details from adsbdb | |
 | Two-way | DMR, P25, NXDN, D-STAR, M17 and FreeDV with voice. Fusion, P25 Phase 2, MPT 1327, LTR and EDACS from recordings | Real systems |
 | Messaging | Meshtastic and POCSAG; transmit checked into IQ files | Never sent on air |
 | Navigation and maritime | DGPS, Loran-C and Marine VHF from recordings | DME has no test input |
 | Recordings | Record, replay with the mode restored | Import through the Files picker |
-| Radio | Antenna RX1 or RX2 on the E310, proven by gain and SNR on the iPhone. Ham It Up per antenna on the Source page: the switches, the frequency arithmetic and the band keys were checked without streaming | Receiving through a real up-converter |
+| Radio | Antenna RX1 or RX2 on the E310, proven by gain and SNR on the iPhone. Ham It Up per antenna on the Source page, tried by the user with the real unit | |
 
 SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. HF ID, ASTERIX, Custom decoders and Add-ons have no test input.
 
