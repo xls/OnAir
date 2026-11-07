@@ -182,6 +182,8 @@ bool onair_start(void* layer, const char*) {
     static char name[] = "OnAir";
     static char* argv[] = {name, nullptr};
     if (!appRunInit(1, argv)) return false;
+    // Auto gain unless the gain was set by hand: at a fixed low gain the converter's own noise hides weak signals and bends the noise floor
+    appRunApp().agcOn = ![NSUserDefaults.standardUserDefaults boolForKey:@"manualGain"];
     appRunApp().tune.synth.dvbt = true;   // the T2 test signal has no programme; the DVB-T one carries a picture and sound
     ImGuiPlatformIO& pio = ImGui::GetPlatformIO();
     pio.Platform_SetClipboardTextFn = [](ImGuiContext*, const char* text) { UIPasteboard.generalPasteboard.string = @(text); };
@@ -772,10 +774,14 @@ void onair_gain_set(double db) {
     App& a = appRunApp();
     a.tune.gainDb = std::round(db);
     a.agcOn = false;
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"manualGain"];
     retuneIfRunning(a);
 }
 
-void onair_agc_set(bool on) { appRunApp().agcOn = on; }
+void onair_agc_set(bool on) {
+    appRunApp().agcOn = on;
+    [NSUserDefaults.standardUserDefaults setBool:!on forKey:@"manualGain"];
+}
 
 void onair_iq_fix_set(bool iq) {
     App& a = appRunApp();

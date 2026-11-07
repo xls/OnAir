@@ -159,6 +159,7 @@ struct RootView: View {
         if let bandwidth = value("--bw"), let mhz = Double(bandwidth) { onair_tv_bandwidth(mhz) }
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
+        if args.contains("--agc") { onair_agc_set(true) }
         if args.contains("--start") && !onair_running() { receiver.startStop() }  // the automatic modes start themselves
         if let address = value("--iptv") { onair_iptv_open(address) }
         if let channel = value("--iptv-channel").flatMap(Int32.init) {
