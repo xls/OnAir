@@ -173,11 +173,8 @@ struct HamPage: View {
         .frame(height: 66)
     }
 
-    /// Three decimals, more only when tuned between kHz.
-    private var vfoText: String {
-        let hz = (receiver.status.mhz * 1e6).rounded()
-        return hz.truncatingRemainder(dividingBy: 1000) == 0 ? String(format: "%.3f", receiver.status.mhz) : String(format: "%.4f", receiver.status.mhz)
-    }
+    /// As the top display: more digits only when tuned between them.
+    private var vfoText: String { Receiver.frequencyText(mhz: receiver.status.mhz).replacingOccurrences(of: " MHz", with: "") }
 
     private func keyGrid(_ columns: Int) -> [GridItem] { Array(repeating: GridItem(.flexible(), spacing: 4), count: columns) }
 

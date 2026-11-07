@@ -47,9 +47,18 @@ final class Receiver {
     }
 
     func startStop() { onair_start_stop(); refresh() }
-    /// Below 1 MHz a frequency reads better in kHz.
+    /// Three decimals, and more only when the frequency has them. Below 1 MHz it reads in kHz.
     static func frequencyText(mhz: Double) -> String {
-        mhz < 1 ? String(format: "%.3f kHz", mhz * 1000) : String(format: "%.3f MHz", mhz)
+        let hz = (mhz * 1e6).rounded()
+        if hz < 1e6 { return String(format: "%.3f kHz", hz / 1e3) }
+        let decimals = hz.truncatingRemainder(dividingBy: 1000) == 0 ? 3 : hz.truncatingRemainder(dividingBy: 100) == 0 ? 4 : hz.truncatingRemainder(dividingBy: 10) == 0 ? 5 : 6
+        return String(format: "%.\(decimals)f MHz", mhz)
+    }
+
+    /// The ends of the spectrum: enough digits to tell them apart at this zoom.
+    static func axisText(hz: Double, spanHz: Double) -> String {
+        if hz < 1e6 { return String(format: spanHz < 2000 ? "%.3f" : "%.1f", hz / 1e3) + " k" }
+        return String(format: spanHz < 2000 ? "%.6f" : spanHz < 200_000 ? "%.4f" : "%.3f", hz / 1e6)
     }
 
     func canReach(mhz: Double) -> Bool {

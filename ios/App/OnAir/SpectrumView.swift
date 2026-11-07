@@ -351,11 +351,11 @@ struct SpectrumPage: View {
     private var axis: some View {
         HStack {
             if receiver.status.running {
-                Text(String(format: "%.3f", spectrum.lowHz / 1e6))
+                Text(Receiver.axisText(hz: spectrum.lowHz, spanHz: spectrum.highHz - spectrum.lowHz))
                 Spacer()
                 Text(Receiver.frequencyText(mhz: spectrum.frequency(atFraction: 0.5) / 1e6))
                 Spacer()
-                Text(String(format: "%.3f", spectrum.highHz / 1e6))
+                Text(Receiver.axisText(hz: spectrum.highHz, spanHz: spectrum.highHz - spectrum.lowHz))
             } else {  // no capture, so no span: only where it is tuned
                 Spacer()
                 Text(Receiver.frequencyText(mhz: receiver.status.mhz))
@@ -393,7 +393,7 @@ struct SpectrumPage: View {
         scrubStart = done ? nil : start
         let spanMhz = (spectrum.highHz - spectrum.lowHz) / 1e6
         let fine = scrubStep(spanMhz: spanMhz, width: width)
-        let snapped = ((start + points / width * spanMhz) / fine).rounded() * fine
+        let snapped = max(((start + points / width * spanMhz) / fine).rounded() * fine, 0.001)   // the core's lowest frequency, 1 kHz
         guard abs(snapped - lastScrub) >= fine / 2, done || Date().timeIntervalSince(lastTuneTime) > 0.04 else { return }
         lastScrub = done ? 0 : snapped
         lastTuneTime = Date()
@@ -406,7 +406,7 @@ struct SpectrumPage: View {
     private func scrubStep(spanMhz: Double, width: CGFloat) -> Double {
         // one point of finger travel is one point of the view, so the step follows the zoom
         let perPoint = spanMhz / max(width, 1)
-        return [0.001, 0.005, 0.0125, 0.025, 0.1, 0.5].first { $0 >= perPoint } ?? 1
+        return [0.000001, 0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.0125, 0.025, 0.1, 0.5].first { $0 >= perPoint } ?? 1
     }
 
     /// While zoomed in, the view moves along with the marker when it nears an edge.
@@ -432,7 +432,7 @@ struct SpectrumPage: View {
     }
 
     private func setView(centre: Double, span: Double) {
-        let span = min(max(span, 0.02), 1)
+        let span = min(max(span, 0.002), 1)
         spectrum.visibleSpan = span
         spectrum.visibleCentre = min(max(centre, span / 2), 1 - span / 2)
     }
