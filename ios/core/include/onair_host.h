@@ -128,6 +128,7 @@ void onair_options_watch(bool on);                                 // keep readi
 const char* onair_options_json(void);                              // [{id, kind, label, section, value, lo, hi, options, disabled}]
 void onair_option_set(unsigned id, const char* value);
 bool onair_filter_band(double* lowHz, double* highHz);             // what is being listened to, for the box on the spectrum
+void onair_fake_guide(void);                                       // made-up programmes, for testing the guide
 void onair_location(double* lat, double* lon);                     // the receiver position, 0,0 when never set
 void onair_location_set(double lat, double lon);
 const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs

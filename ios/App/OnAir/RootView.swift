@@ -178,6 +178,7 @@ struct RootView: View {
         if let bandwidth = value("--bw"), let mhz = Double(bandwidth) { onair_tv_bandwidth(mhz) }
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
+        if args.contains("--fake-guide") { onair_fake_guide() }
         if args.contains("--agc") { onair_agc_set(true) }
         if let id = value("--sw-press").flatMap(Int32.init) { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { onair_sw_press(id) } }
         if let rate = value("--rate").flatMap(Double.init) { onair_rate_set(rate * 1e6) }

@@ -3,7 +3,7 @@ import OnAirCore
 import SwiftUI
 
 /// The colours of the television screens: a modern dark interface rather than the radio's metal.
-private enum TV {
+enum TV {
     static let background = Color(red: 0.04, green: 0.05, blue: 0.08)
     static let card = Color(red: 0.1, green: 0.12, blue: 0.17)
     static let accent = Color(red: 0.32, green: 0.62, blue: 1.0)
@@ -30,7 +30,7 @@ struct TVState: Decodable {
     var services: [Service] = []
 }
 
-private func tvDecode<T: Decodable>(_ type: T.Type, _ text: UnsafePointer<CChar>?) -> T? {
+func tvDecode<T: Decodable>(_ type: T.Type, _ text: UnsafePointer<CChar>?) -> T? {
     guard let text else { return nil }
     return try? JSONDecoder().decode(type, from: Data(String(cString: text).utf8))
 }
@@ -134,7 +134,7 @@ struct TVPage: View {
     let receiver: Receiver
     @State private var renderer = VideoRenderer()
     @State private var state = TVState()
-    @State private var section = TVSection.channels
+    @State private var section = ProcessInfo.processInfo.arguments.contains("--guide") ? TVSection.guide : .channels
     @State private var tick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     @State private var autoMessage = ""
@@ -178,7 +178,7 @@ struct TVPage: View {
                     Group {
                         switch section {
                         case .channels: ChannelList(state: state)
-                        case .guide: GuideList(serviceId: state.selected, title: playing?.name ?? "")
+                        case .guide: TVGuide(state: state)
                         case .teletext: TeletextView()
                         case .scan: ScanView(receiver: receiver, state: state)
                         }
@@ -410,64 +410,6 @@ private struct ChannelList: View {
             }
             .padding(12)
         }
-    }
-}
-
-private struct GuideList: View {
-    private struct Event: Decodable, Identifiable {
-        var id: Int64 { start }
-        let start: Int64
-        let duration: Int
-        let title, text, extended: String
-    }
-
-    let serviceId: Int
-    let title: String
-    @State private var events: [Event] = []
-    @State private var open: Int64?
-    @State private var tick = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
-
-    private func time(_ seconds: Int64) -> String {
-        Date(timeIntervalSince1970: TimeInterval(seconds)).formatted(.dateTime.weekday(.abbreviated).hour().minute())
-    }
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                if events.isEmpty {
-                    Text(serviceId < 0 ? "Choose a channel to see its guide." : "Waiting for the guide…").foregroundStyle(.secondary)
-                }
-                ForEach(events) { event in
-                    Button {
-                        open = open == event.id ? nil : event.id
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(time(event.start)).font(.caption.monospacedDigit()).foregroundStyle(TV.accent)
-                                Spacer()
-                                Text("\(event.duration / 60) min").font(.caption2).foregroundStyle(.secondary)
-                            }
-                            Text(event.title).font(.body.weight(.medium)).foregroundStyle(.white).multilineTextAlignment(.leading)
-                            if open == event.id {
-                                Text(event.text.isEmpty ? event.extended : event.text).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(TV.card, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                }
-            }
-            .padding(12)
-        }
-        .onAppear(perform: load)
-        .onChange(of: serviceId) { load() }
-        .onReceive(tick) { _ in load() }
-    }
-
-    private func load() {
-        let now = Int64(Date().timeIntervalSince1970)
-        events = (tvDecode([Event].self, onair_epg_json(Int32(serviceId))) ?? []).filter { $0.start + Int64($0.duration) > now }
     }
 }
 

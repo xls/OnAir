@@ -490,6 +490,7 @@ void onair_options_watch(bool on) { gOptionsWanted = on; gOptionsCountdown = 0; 
 const char* onair_options_json(void) { return gOptions.c_str(); }
 void onair_option_set(unsigned id, const char* value) { reflect::edit(id, value); }
 
+void onair_fake_guide(void) { appRunApp().fakeEpg = true; }
 void onair_location(double* lat, double* lon) { receiverLocation(*lat, *lon); }
 void onair_location_set(double lat, double lon) { setReceiverLocation(appRunApp(), lat, lon); }
 
