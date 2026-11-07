@@ -206,11 +206,10 @@ struct ModeBrowser: View {
             Image(systemName: on ? "star.fill" : "star")
                 .font(.system(size: 13))
                 .foregroundStyle(on ? RadioTheme.amber : Color(white: 0.5))
-                .frame(width: 44, height: 40)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .offset(x: 2, y: -6)
         .accessibilityLabel(on ? "Remove \(row.name) from favorites" : "Add \(row.name) to favorites")
     }
 
@@ -251,7 +250,6 @@ struct ModeBrowser: View {
                         } label: {
                             PanelRow(label: row.name, help: row.blurb) {
                                 HStack(spacing: 8) {
-                                    Color.clear.frame(width: 26, height: 1)   // the star sits here
                                     Text(row.native ? "NATIVE" : "BASIC")
                                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                                         .foregroundStyle(row.native ? Color.green : Color(white: 0.5))
@@ -262,12 +260,13 @@ struct ModeBrowser: View {
                                         .fill(onair_mode_is_selected(row.id) ? Color.green : Color(white: 0.18))
                                         .frame(width: 10, height: 10)
                                         .shadow(color: onair_mode_is_selected(row.id) ? .green : .clear, radius: 5)
+                                    Color.clear.frame(width: 24, height: 1)   // the star sits here
                                 }
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .overlay(alignment: .topTrailing) { star(row) }
+                        .overlay(alignment: .trailing) { star(row) }
                         .id(row.id)
                     }
                 }
