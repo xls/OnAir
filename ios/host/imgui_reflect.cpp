@@ -142,6 +142,22 @@ static bool workingButton(const std::string& label) {
     for (const char* word : {"scan ", "stop", "start", "clear", "reset", "skip", "record"}) if (t.rfind(word, 0) == 0) return true;
     return false;
 }
+// Text that names nothing: a dash, a stray unit or letter, a value that happened to stand beside the control
+static bool meaningless(const std::string& label) {
+    size_t letters = 0;
+    for (char c : label) if (isalpha((unsigned char)c)) letters++;
+    if (letters < 2) return true;
+    const std::string t = lower(label);
+    for (const char* unit : {"hz", "khz", "mhz", "ghz", "db", "ms", "to", "ppm", "bd", "hop"}) if (t == unit) return true;
+    return false;
+}
+
+static std::string readable(const std::string& label) {
+    if (label == "RATE") return "Sample rate";
+    if (label == "BW") return "Bandwidth";
+    return label;
+}
+
 static std::string shortHelp(const std::string& help) {   // a name for a control that has only a tooltip
     size_t cut = help.find_first_of(".:,(;\n");
     if (cut == std::string::npos || cut > 40) cut = std::min<size_t>(help.size(), 40);
@@ -159,12 +175,16 @@ std::string end() {
     gOn = false;
     gHasEdit = false;
     std::string j = "[";
+    std::string before;   // the control just above: a nameless setting beside a switch belongs to it
     for (Item& it : gItems) {
         const bool readout = it.guessed && it.label.find_first_of("0123456789") != std::string::npos;
-        if ((it.label.empty() || readout) && !it.help.empty()) it.label = shortHelp(it.help);
+        if ((it.label.empty() || readout || meaningless(it.label)) && it.kind != "note") it.label = it.help.empty() ? std::string() : shortHelp(it.help);
+        if (it.label.empty() && it.kind != "note" && it.kind != "button" && !before.empty()) it.label = before + " setting";
+        if (it.kind != "note" && it.kind != "button" && it.label.find(" setting") == std::string::npos) before = it.label;
+        it.label = readable(it.label);
         if (it.kind == "button" && !workingButton(it.label)) continue;
         if (it.kind != "note" && desktopOnly(it.label)) continue;
-        if (it.label == "Compute") continue;   // where the error correction runs: stays on Auto, there is nothing on the phone to see from it
+        if (lower(it.label) == "compute") continue;   // where the error correction runs: stays on Auto, there is nothing on the phone to see from it
         if (j.size() > 1) j += ",";
         j += "{\"id\":" + std::to_string(it.id) + ",\"kind\":\"" + it.kind + "\",\"label\":\"" + dect2::jsonEscape(it.label) + "\",\"section\":\"" + dect2::jsonEscape(it.section) +
              "\",\"help\":\"" + dect2::jsonEscape(it.help) + "\",\"preview\":\"" + dect2::jsonEscape(it.preview) + "\",\"value\":\"" + dect2::jsonEscape(it.value) + "\",\"lo\":" + num(it.lo) + ",\"hi\":" + num(it.hi) + ",\"disabled\":" + (it.disabled ? "true" : "false") + ",\"options\":[";
@@ -311,7 +331,7 @@ static void remember(const char* text, const char* end = nullptr) {
         if (!gItems.empty() && gItems.back().help.size() < 240) gItems.back().help += (gItems.back().help.empty() ? "" : " ") + t;
         return;
     }
-    if (!gItems.empty() && gItems.back().label.empty()) gItems.back().label = t.substr(0, 40);   // a list row: its name comes after the box
+    if (!gItems.empty() && gItems.back().label.empty() && gItems.back().kind == "toggle") gItems.back().label = t.substr(0, 40);   // a list row: its name comes after the box
     if (gNotes && gCombo < 0 && !t.empty() && gNoteCount < 8) {
         gNoteCount++;
         Item note;

@@ -37,18 +37,25 @@ Last full sweep: 183 of 183 modes start and none crashes.
 
 | Screen | Measured | Not yet done |
 |---|---|---|
-| FM | Real stations through the E310 on the iPhone | Long listening test |
-| Spectrum and scopes | 60 fps on the iPhone | |
-| TV | DVB-T picture and sound from the test signal; H.264 720p and MPEG-2 576p from stream files; automatic detection; Internet TV, direct and playlist | Real over-the-air channel. DVB-T2 video: the built-in T2 signal carries no payload, so it was only checked by the upstream unit test |
-| Ham | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW | Never transmitted on air. The WSPR and EME submodes stay on "listening": the test signal is FT8 only |
-| Broadcast | DAB+, DRM, AM and shortwave with audio. HD Radio locks and shows stations | No sound for HD Radio (HDC) or CDR (DRA+): those codecs are not available |
-| Trackers | ADS-B, AIS, APRS, UAT and Horus from the test signals | Real traffic |
+| FM | Real stations through the E310 on the iPhone, with scopes | Long listening test |
+| Spectrum | 60 fps on the iPhone; filter box; two-finger height from flat to just unclipped, checked by setting the range | Drag by finger |
+| TV | Real channels scanned on the iPhone (the user's check). DVB-T picture and sound from the test signal; H.264 and MPEG-2 from files; automatic detection; Internet TV. Channel list by frequency, grid guide with made-up programmes, fit and zoom full screen | Real guide data; retuning between frequencies by a tap; DVB-T2 video in the app |
+| Ham, Shortwave, General | FT8 decodes the test signal; transmit checked into IQ files for FT8 and CW; band keys and steps follow the demodulator | Below 70 MHz on the E310 needs a converter; never transmitted on air |
+| Broadcast | DAB+, DRM, AM and shortwave with audio from test signals. HD Radio locks | No sound for HD Radio (HDC) or CDR (DRA+): those codecs are not available |
+| Trackers | Real ADS-B aircraft on the iPhone through RX2. AIS, APRS, UAT and Horus from test signals. Target card with aircraft details from adsbdb | The card seen on the iPhone |
 | Two-way | DMR, P25, NXDN, D-STAR, M17 and FreeDV with voice. Fusion, P25 Phase 2, MPT 1327, LTR and EDACS from recordings | Real systems |
 | Messaging | Meshtastic and POCSAG; transmit checked into IQ files | Never sent on air |
-| Navigation and maritime | DGPS, Loran-C and Marine VHF (channel 16 with sound) from recordings | DME has no test input. DCF77 was not run for the minute it needs |
-| Recordings | Record, replay with the mode restored, FM locked at 52 dB with sound | Import through the Files picker was not exercised by a test |
+| Navigation and maritime | DGPS, Loran-C and Marine VHF from recordings | DME has no test input |
+| Recordings | Record, replay with the mode restored | Import through the Files picker |
+| Radio | Antenna RX1 or RX2 on the E310, proven by gain and SNR on the iPhone | Antenna row on the Source page seen on the iPhone |
 
 SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. HF ID, ASTERIX, Custom decoders and Add-ons have no test input.
+
+## How mode settings reach the native drawers
+
+`ios/host/imgui_reflect.cpp`. There is no wiring per mode. The desktop's panels still run, but `imgui_widgets.cpp` and `imgui.cpp` are compiled with their widgets renamed (`ios/core/CMakeLists.txt`) and the wrappers report what each widget is, instead of drawing it. An edit in a native control comes back as if the widget had been used, so it goes through the panel's own logic. Tooltips become the help text, and a new setting upstream appears by itself.
+
+Rules in that file: anything that opens a desktop window, panel, folder or dialog is dropped, and a button appears only if it starts with an action known to work here. `OptionSweep` (`--option-sweep`) changes every setting of a mode and checks that it took.
 
 ## Limits found while testing
 
@@ -56,8 +63,7 @@ SELCAL shows "listening" on the test signal, and that is expected: the app picks
 
 ## Direction: native first
 
-The app is a custom native iOS app on OnAir's engine. `core/` and `rust/` stay unchanged and keep merging from upstream. The interface moves to
-native screen by screen, and any mode without a native screen falls back to its ImGui panel, so every mode keeps working.
+The app is a custom native iOS app on OnAir's engine. `core/` and `rust/` stay close to upstream and keep merging, with small changes where iOS needs them. The interface is native on every screen; ImGui panels only run unseen, to read their settings.
 
 Order: native shell and controls, then a native Metal spectrum and waterfall, then native screens for the modes in use, starting with FM. The
 spectrum reuses the ImGui-free headers (`colormap.h`, `spec_pipe.h`, `spec_axis.h`, `tune_drag.h`, `wf_view.h`). Control logic that lives in
@@ -65,8 +71,7 @@ spectrum reuses the ImGui-free headers (`colormap.h`, `spec_pipe.h`, `spec_axis.
 
 ## Native screens by kind of mode
 
-183 modes share a few shapes, so each shape is one reusable SwiftUI screen, filled with data from the core. A mode with no native screen yet
-uses its ImGui panel.
+183 modes share a few shapes, so each shape is one reusable SwiftUI screen, filled with data from the core.
 
 | Priority | Screen type | Modes | What it looks like |
 |---|---|---|---|

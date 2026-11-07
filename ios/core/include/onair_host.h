@@ -131,6 +131,8 @@ bool onair_filter_band(double* lowHz, double* highHz);             // what is be
 void onair_fake_guide(void);                                       // made-up programmes, for testing the guide
 void onair_location(double* lat, double* lon);                     // the receiver position, 0,0 when never set
 void onair_location_set(double lat, double lon);
+const char* onair_converter_json(void);                            // {id, lo, presets: [{id, name, custom}]}
+void onair_converter_set(const char* id, double loMhz);            // loMhz is for the custom one
 const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs
 void onair_tv_play_file(const char* path);                        // a recorded .ts through the demux and the player, at its own pace
 void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic

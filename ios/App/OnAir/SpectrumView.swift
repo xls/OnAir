@@ -57,9 +57,6 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
     @ObservationIgnored private var colours = [UInt32](repeating: 0, count: 256)
     @ObservationIgnored private var row = 0
     @ObservationIgnored private var noiseFloor: Float = -1000
-    @ObservationIgnored private var frames = 0
-    @ObservationIgnored private var lines = 0
-    @ObservationIgnored private var frameClock = Date()
 
     /// The visible part of the capture, 0...1.
     var visibleCentre = 0.5
@@ -119,7 +116,6 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
         var got = false
         while onair_spectrum(&bins, Int32(Self.binCount), &meta) { got = true }
         guard got else { return }
-        lines += 1
         if centreHz != meta[0] { centreHz = meta[0] }
         if spanHz != meta[1] { spanHz = meta[1] }
         // the desktop's range tracking runs in its drawing code, so the floor is measured here: the 20th percentile of the line, smoothed
@@ -142,13 +138,6 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
         if UIFreeze.shared.on { return }   // the last frame stays on the screen
         guard onair_is_started() else { return }
         takeLine()
-        frames += 1
-        if Date().timeIntervalSince(frameClock) >= 2 {
-            NSLog("OnAir spectrum %.0f fps, %d lines", Double(frames) / 2, lines)
-            frames = 0
-            lines = 0
-            frameClock = Date()
-        }
         guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let commands = queue.makeCommandBuffer(), let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
 

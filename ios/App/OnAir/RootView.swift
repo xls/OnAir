@@ -164,11 +164,6 @@ struct RootView: View {
 
     private func applyTestArguments() {
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("--who") {
-            Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
-                MainActor.assumeIsolated { NSLog("OnAirWho selected=%d devices=%@ status=%@", onair_device_selected(), receiver.devices.description, receiver.status.source) }
-            }
-        }
         func value(_ name: String) -> String? {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
@@ -185,6 +180,7 @@ struct RootView: View {
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--fake-guide") { onair_fake_guide() }
+        if let converter = value("--converter") { onair_converter_set(converter, 125) }
         if let antenna = value("--antenna") { onair_radio_setting_set("antenna", antenna) }
         if args.contains("--scopes") {
             UserDefaults.standard.set("L / R", forKey: "scopeLeft")
@@ -209,6 +205,7 @@ struct RootView: View {
             label = name
         }
         if let path = value("--tx-file") { transmitToFile(path, mode: value("--mode") ?? "") }
+        if args.contains("--option-sweep") { Task { await OptionSweep.run() } }
         if args.contains("--open-options") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { drawer = .settings } }
         if args.contains("--open-scan") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { drawer = .scan } }
         if args.contains("--options") {

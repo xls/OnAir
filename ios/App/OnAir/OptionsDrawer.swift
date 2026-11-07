@@ -284,3 +284,50 @@ private struct OptionRow: View {
         return value == value.rounded() ? String(format: "%.0f", value) : String(format: "%.2f", value)
     }
 }
+
+/// A test: changes each setting of the current mode, checks that the panel took it, and puts it back. Writes Documents/effects.json.
+enum OptionSweep {
+    private struct Result: Encodable {
+        let label, kind, section, from, to, after: String
+        let took: Bool
+    }
+
+    private static func read() -> [PanelOption] {
+        guard let json = onair_options_json() else { return [] }
+        return (try? JSONDecoder().decode([PanelOption].self, from: Data(String(cString: json).utf8))) ?? []
+    }
+
+    private static func changed(_ option: PanelOption) -> String? {
+        switch option.kind {
+        case "toggle": return option.value == "1" ? "0" : "1"
+        case "choice":
+            let usable = option.options.indices.filter { !option.options[$0].isEmpty && String($0) != option.value }
+            return usable.first.map(String.init)
+        case "slider":
+            let value = Double(option.value) ?? option.lo
+            return String(value > (option.lo + option.hi) / 2 ? option.lo + (option.hi - option.lo) * 0.25 : option.lo + (option.hi - option.lo) * 0.75)
+        case "number": return String((Double(option.value) ?? 0) + 1)
+        default: return nil
+        }
+    }
+
+    @MainActor static func run() async {
+        onair_options_watch(true)
+        try? await Task.sleep(for: .seconds(3))
+        var out: [Result] = []
+        let unsafe = ["transmit", "send", "record", "delete", "clear", "tx "]
+        let options = read().filter { option in !unsafe.contains { option.label.lowercased().contains($0) } }
+        for option in options.prefix(45) {
+            guard let value = changed(option) else { continue }
+            onair_option_set(option.id, value)
+            try? await Task.sleep(for: .milliseconds(450))
+            let now = read().first { $0.id == option.id }
+            let took = now.map { (Double($0.value) ?? .nan) == (Double(value) ?? .infinity) || $0.value == value || $0.value != option.value } ?? false
+            out.append(Result(label: option.label, kind: option.kind, section: option.section, from: option.value, to: value, after: now?.value ?? "gone", took: took))
+            onair_option_set(option.id, option.value)
+            try? await Task.sleep(for: .milliseconds(300))
+        }
+        let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("effects.json")
+        try? JSONEncoder().encode(out).write(to: file)
+    }
+}

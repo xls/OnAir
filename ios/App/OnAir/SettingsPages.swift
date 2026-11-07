@@ -242,6 +242,7 @@ struct RadioSettingsPage: View {
                 PanelSection(title: "Radio") {
                     ForEach(rows) { row in control(row) }
                 }
+                ConverterSection()
             }
         }
         .onAppear(perform: load)
@@ -323,5 +324,63 @@ private struct LocationSection: View {
             load()
         }
         location.start()
+    }
+}
+
+/// An up-converter or LNB in front of the radio: you tune the frequency at the antenna, and the radio goes to what comes out of the converter.
+private struct ConverterSection: View {
+    private struct State: Decodable {
+        struct Preset: Decodable {
+            let id, name: String
+            let custom: Bool
+        }
+        var id = "none"
+        var lo = "125"
+        var presets: [Preset] = []
+    }
+
+    @State private var state = State()
+    @State private var entry = ""
+    @FocusState private var typing: Bool
+
+    private var current: State.Preset? { state.presets.first { $0.id == state.id } }
+
+    var body: some View {
+        PanelSection(title: "Frequency converter") {
+            PanelRow(label: "Converter", help: "Fit one to reach below 70 MHz. Tune the frequency at the antenna; the radio is moved for you.") {
+                SelectorWindow(selected: current?.name ?? "None", options: state.presets.map(\.name)) { index in
+                    onair_converter_set(state.presets[index].id, Double(entry) ?? 125)
+                    load()
+                }
+            }
+            if current?.custom == true {
+                PanelRow(label: "Oscillator (MHz)") {
+                    GlassWindow(corner: 4) {
+                        TextField("", text: $entry)
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(RadioTheme.amber)
+                            .multilineTextAlignment(.trailing)
+                            .keyboardType(.decimalPad)
+                            .focused($typing)
+                            .padding(6)
+                    }
+                    .frame(width: 110, height: 32)
+                }
+            }
+        }
+        .onAppear(perform: load)
+        .onChange(of: typing) {
+            if !typing, let mhz = Double(entry), mhz > 0 {
+                onair_converter_set(state.id, mhz)
+                load()
+            }
+        }
+    }
+
+    private func load() {
+        if let new = decode(State.self, onair_converter_json()) {
+            state = new
+            entry = new.lo
+        }
     }
 }

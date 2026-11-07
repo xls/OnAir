@@ -26,6 +26,7 @@
 #include "dect2/engine/rate_choice.h"
 #include "dect2/general/general_rx.h"
 #include "imgui_reflect.h"
+#include "dect2/source/converter.h"
 #include "dect2/net/remote_api.h"
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
@@ -168,7 +169,9 @@ void readOptions(App& a) {
         if (m->tuner) { reflect::section("Tuning"); m->tuner(a, retune); }
         if (m->decoder) { reflect::section("Decoder"); m->decoder(a, retune); }
         if (m->command) { reflect::section("Options"); m->command(a); }
-        else if (m->tab) { reflect::section("Options"); m->tab(a); }
+        if (m->tab) { reflect::section("Options"); m->tab(a); }
+        if (m->receiver) { reflect::section("Receiver"); m->receiver(a); }
+        if (m->list) { reflect::section("List"); m->list(a); }
         ImGui::PopID();
     } else {   // the TV modes: their tuner and decoder are in the top bar's pieces
         reflect::section("Tuning");
@@ -664,8 +667,15 @@ const char* onair_rate_json(void) {
     App& a = appRunApp();
     const DeviceInfo& d = a.devices[(size_t)a.devIdx];
     const bool run = a.engine.running(), usable = d.isRadio() || d.kind == DeviceInfo::Synthetic;
+    // what can be heard at the antenna: the radio's own range, moved by a converter in front of it
+    double reachLow = d.isRadio() ? std::max(d.minFreqHz, d.board == "pluto" ? 70e6 : 0.0) : 0.0, reachHigh = d.isRadio() ? d.maxFreqHz : 0.0;
+    if (const dect2::Converter c = dect2::converterFromRadio(a.tune.radio); c.active) {
+        const double shift = c.mode == dect2::Converter::Add ? -c.loHz : c.loHz;
+        reachLow = std::max(reachLow + shift, 0.0);
+        if (reachHigh > 0) reachHigh += shift;
+    }
     json = "{\"usable\":" + std::string(usable ? "true" : "false") + ",\"now\":" + textOf(run ? a.engine.radioRate() : a.chosenRateHz > 0 ? a.chosenRateHz : a.tune.sampleRate) +
-           ",\"chosen\":" + textOf(a.chosenRateHz) + ",\"auto\":" + textOf(a.autoRateHz > 0 ? a.autoRateHz : a.tune.sampleRate) + ",\"need\":" + textOf(modeMinSampleRate(a)) + ",\"minHz\":" + textOf(d.isRadio() ? std::max(d.minFreqHz, d.board == "pluto" ? 70e6 : 0.0) : 0.0) + ",\"maxHz\":" + textOf(d.isRadio() ? d.maxFreqHz : 0.0) + ",\"rates\":[";
+           ",\"chosen\":" + textOf(a.chosenRateHz) + ",\"auto\":" + textOf(a.autoRateHz > 0 ? a.autoRateHz : a.tune.sampleRate) + ",\"need\":" + textOf(modeMinSampleRate(a)) + ",\"minHz\":" + textOf(reachLow) + ",\"maxHz\":" + textOf(reachHigh) + ",\"rates\":[";
     bool first = true;
     if (usable) for (const dect2::RateEntry& e : dect2::rateEntries(dect2::rateLimitsOf(d), 0)) {
         json += (first ? "" : ",") + textOf(e.getHz);
@@ -891,6 +901,32 @@ void onair_dc_mode_set(int mode) {
     a.engine.setAutoOffset(mode == 2);
     savePrefs(a);
     if (wasOffset != (mode == 2) && a.engine.running()) startReceiver(a);   // offset tuning is set up when the radio opens
+}
+
+// The converter in front of the radio: the same keys as the desktop's radio settings
+const char* onair_converter_json(void) {
+    App& a = appRunApp();
+    const auto setting = [&](const char* key, const char* fallback) { const auto it = a.tune.radio.find(key); return it != a.tune.radio.end() ? it->second : std::string(fallback); };
+    gJson = "{\"id\":" + quoted(setting(dect2::convKeyPreset(), "none")) + ",\"lo\":" + quoted(setting(dect2::convKeyLo(), "125")) + ",\"presets\":[";
+    bool first = true;
+    for (const dect2::ConverterPreset& p : dect2::converterPresets()) {
+        gJson += std::string(first ? "" : ",") + "{\"id\":" + quoted(p.id) + ",\"name\":" + quoted(p.name) + ",\"custom\":" + (p.custom ? "true" : "false") + "}";
+        first = false;
+    }
+    gJson += "]}";
+    return gJson.c_str();
+}
+
+void onair_converter_set(const char* id, double loMhz) {
+    App& a = appRunApp();
+    const dect2::ConverterPreset* p = dect2::findConverterPreset(id);
+    if (!p) return;
+    a.tune.radio.erase(dect2::convKeyLo());
+    a.tune.radio.erase(dect2::convKeyMode());
+    if (std::string(p->id) == "none") a.tune.radio.erase(dect2::convKeyPreset()); else a.tune.radio[dect2::convKeyPreset()] = p->id;
+    if (p->custom) { a.tune.radio[dect2::convKeyLo()] = textOf(loMhz); a.tune.radio[dect2::convKeyMode()] = "add"; }
+    saveRadioSettings(a);
+    if (a.engine.running()) startReceiver(a);
 }
 
 const char* onair_radio_settings_json(void) {
