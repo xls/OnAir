@@ -157,6 +157,7 @@ void pageBody(App& a, ImVec2) {
 }   // namespace
 
 static std::string gNetPassword;
+static bool gCoreUp = false;       // appRunInit is done: before that there is no App to ask
 static bool gStartTried = false;   // the last thing asked of POWER was to start: its refusal is shown until something changes
 
 extern "C" {
@@ -182,6 +183,7 @@ bool onair_start(void* layer, const char*) {
     static char name[] = "OnAir";
     static char* argv[] = {name, nullptr};
     if (!appRunInit(1, argv)) return false;
+    gCoreUp = true;
     // Auto gain unless the gain was set by hand: at a fixed low gain the converter's own noise hides weak signals and bends the noise floor
     appRunApp().agcOn = ![NSUserDefaults.standardUserDefaults boolForKey:@"manualGain"];
     appRunApp().tune.synth.dvbt = true;   // the T2 test signal has no programme; the DVB-T one carries a picture and sound
@@ -334,8 +336,8 @@ const char* onair_mode_name(int i) { const ModeDef& m = kModes[i]; return m.sub 
 const char* onair_mode_group(int i) { const int g = kModes[i].group; return g >= 0 && g < kNumGroups ? kGroupNames[g] : ""; }
 const char* onair_mode_blurb(int i) { return kModes[i].blurb ? kModes[i].blurb : ""; }
 int onair_mode_family(int i) { return kModes[i].family; }
-bool onair_mode_is_selected(int i) { return modeSelected(appRunApp(), kModes[i]); }
-void onair_mode_select(int i) { gStartTried = false; selectMode(appRunApp(), kModes[i].family, kModes[i].subId); }
+bool onair_mode_is_selected(int i) { return gCoreUp && modeSelected(appRunApp(), kModes[i]); }
+void onair_mode_select(int i) { if (!gCoreUp) return; gStartTried = false; selectMode(appRunApp(), kModes[i].family, kModes[i].subId); }
 
 bool onair_spectrum(float* bins, int n, double* meta) {
     App& a = appRunApp();

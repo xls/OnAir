@@ -64,7 +64,7 @@ struct RootView: View {
     var body: some View {
         VStack(spacing: 0) {
             if !receiver.videoFullscreen {
-                StatusStrip(receiver: receiver)
+                StatusStrip(receiver: receiver) { tab = .mode }
                 if tab == .device {
                     ChipRow(selection: $devicePage)
                 }
@@ -230,7 +230,9 @@ struct RootView: View {
 /// The top of the unit: power, a lit frequency window and the mute key.
 struct StatusStrip: View {
     let receiver: Receiver
+    let onPickMode: () -> Void
     @State private var showDrawer = false
+    @State private var showModes = false
 
     /// Internet TV comes over the network: there is no radio to power or tune.
     private var isStream: Bool { receiver.status.family == OnAirFamily.internetTV }
@@ -270,24 +272,40 @@ struct StatusStrip: View {
                     .frame(width: 62)
                 }
 
-                Button {
-                    showDrawer = true
-                } label: {
-                    GlassWindow(corner: 6) {
-                        Text(isStream ? "INTERNET" : String(format: "%.3f MHz", receiver.status.mhz))
-                            .font(.system(size: 19, weight: .medium, design: .monospaced))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .foregroundStyle(RadioTheme.amber)
-                            .shadow(color: RadioTheme.amber.opacity(0.8), radius: 6)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                GlassWindow(corner: 6) {
+                    HStack(spacing: 0) {
+                        Button {
+                            showDrawer = true
+                        } label: {
+                            Text(isStream ? "INTERNET" : String(format: "%.3f MHz", receiver.status.mhz))
+                                .font(.system(size: 19, weight: .medium, design: .monospaced))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .foregroundStyle(RadioTheme.amber)
+                                .shadow(color: RadioTheme.amber.opacity(0.8), radius: 6)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isStream)
+
+                        Button {
+                            receiver.setMuted(!receiver.status.muted)
+                        } label: {
+                            Image(systemName: receiver.status.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.system(size: 15))
+                                .foregroundStyle(receiver.status.muted ? Color.red : RadioTheme.amber)
+                                .frame(width: 42)
+                                .frame(maxHeight: .infinity)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(receiver.status.muted ? "Unmute" : "Mute")
                     }
                 }
-                .buttonStyle(.plain)
-                .disabled(isStream)
 
-                HardwareKey(lit: receiver.status.muted, led: .red, action: { receiver.setMuted(!receiver.status.muted) }) {
-                    EngravedLabel(text: "MUTE", size: 8)
+                HardwareKey(action: { showModes = true }) {
+                    EngravedLabel(text: "MODE", size: 8)
                 }
                 .frame(width: 62)
             }
@@ -297,6 +315,17 @@ struct StatusStrip: View {
         .frame(height: 58)
         .sheet(isPresented: $showDrawer) {
             FrequencyDrawer(receiver: receiver)
+        }
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("--open-modes") else { return }
+            try? await Task.sleep(for: .seconds(2))
+            showModes = true
+        }
+        .sheet(isPresented: $showModes) {
+            ModeBrowser(receiver: receiver) {
+                showModes = false
+                onPickMode()
+            }
         }
     }
 }
