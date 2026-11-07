@@ -37,6 +37,8 @@ private struct RigBand: Identifiable {
 
     static let cw = [RigBand(name: "160", mhz: 1.83), RigBand(name: "80", mhz: 3.53), RigBand(name: "40", mhz: 7.03), RigBand(name: "30", mhz: 10.12), RigBand(name: "20", mhz: 14.03), RigBand(name: "17", mhz: 18.08), RigBand(name: "15", mhz: 21.03), RigBand(name: "12", mhz: 24.91), RigBand(name: "10", mhz: 28.03), RigBand(name: "6", mhz: 50.09), RigBand(name: "2", mhz: 144.05), RigBand(name: "70", mhz: 432.05)]
     static let nfm = [RigBand(name: "10M", mhz: 29.6), RigBand(name: "6M", mhz: 52.525), RigBand(name: "2M", mhz: 145.5), RigBand(name: "MARINE", mhz: 156.8), RigBand(name: "70CM", mhz: 439.0), RigBand(name: "PMR", mhz: 446.1), RigBand(name: "UHF CB", mhz: 477.0)]
+    static let utility = [RigBand(name: "WWV 2.5", mhz: 2.5), RigBand(name: "WWV 5", mhz: 5), RigBand(name: "WWV 10", mhz: 10), RigBand(name: "WWV 15", mhz: 15), RigBand(name: "WWV 20", mhz: 20), RigBand(name: "CHU 3.33", mhz: 3.33), RigBand(name: "CHU 7.85", mhz: 7.85), RigBand(name: "CHU 14.67", mhz: 14.67), RigBand(name: "NAVTEX", mhz: 4.2095), RigBand(name: "FAX 3.855", mhz: 3.855), RigBand(name: "FAX 7.88", mhz: 7.88), RigBand(name: "FAX 13.88", mhz: 13.8825)]
+    static let digital = [RigBand(name: "FT8 40", mhz: 7.0755), RigBand(name: "FT8 30", mhz: 10.1375), RigBand(name: "FT8 20", mhz: 14.0755), RigBand(name: "FT8 17", mhz: 18.1015), RigBand(name: "FT8 15", mhz: 21.0755), RigBand(name: "FT8 10", mhz: 28.0755), RigBand(name: "RTTY 80", mhz: 3.5815), RigBand(name: "RTTY 40", mhz: 7.0415), RigBand(name: "RTTY 20", mhz: 14.0815), RigBand(name: "PSK 40", mhz: 7.0715), RigBand(name: "PSK 20", mhz: 14.0715), RigBand(name: "SSTV 20", mhz: 14.2315), RigBand(name: "WSPR 20", mhz: 14.0971)]
     static let wfm = [RigBand(name: "88", mhz: 88.1), RigBand(name: "92", mhz: 92.1), RigBand(name: "96", mhz: 96.1), RigBand(name: "100", mhz: 100.1), RigBand(name: "104", mhz: 104.1), RigBand(name: "107", mhz: 107.1)]
 }
 
@@ -88,6 +90,7 @@ struct HamPage: View {
     @State private var showTransmit = false
     @AppStorage("rigStepHz") private var stepHz = 1000.0
     @State private var shortwave = Shortwave()
+    @AppStorage("swShortcuts") private var shortcuts = "BANDS"
     @State private var showPicture = false
     @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     private static let steps: [Double] = [100, 1000, 5000, 12500, 25000, 100_000]
@@ -106,6 +109,7 @@ struct HamPage: View {
                 GlassWindow(corner: 6) {
                     SpectrumMetalView(renderer: spectrum)
                         .overlay { FilterBox(receiver: receiver, spectrum: spectrum) }
+                        .overlay { RigSpectrumTouch(receiver: receiver, spectrum: spectrum) }
                 }
                 .frame(height: isVoice ? 84 : 110)
                 vfo
@@ -113,6 +117,7 @@ struct HamPage: View {
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 6) {
                             if isShortwave {
+                                shortcutGroups
                                 demodBands
                                 shortwaveDemods
                                 filters
@@ -243,8 +248,19 @@ struct HamPage: View {
 
     private var voiceMode: VoiceMode { VoiceMode.allCases.first { $0.demod == Int32(general.demod) } ?? .usb }
 
+    private var shortcutGroups: some View {
+        HStack(spacing: 4) {
+            ForEach(["BANDS", "UTILITY", "DIGITAL"], id: \.self) { name in
+                HardwareKey(lit: shortcuts == name, led: Rig.lcd, action: { shortcuts = name }) { EngravedLabel(text: name, size: 8) }
+            }
+        }
+        .frame(height: 30)
+    }
+
     private var voiceBands: [RigBand] {
-        switch voiceMode {
+        if isShortwave && shortcuts == "UTILITY" { return RigBand.utility }
+        if isShortwave && shortcuts == "DIGITAL" { return RigBand.digital }
+        return switch voiceMode {
         case .usb, .lsb: HamBand.all.map { RigBand(name: $0.name, mhz: $0.voice) }
         case .cw: RigBand.cw
         case .fm: RigBand.nfm
@@ -259,7 +275,7 @@ struct HamPage: View {
         LazyVGrid(columns: keyGrid(6), spacing: 4) {
             ForEach(voiceBands) { band in
                 HardwareKey(lit: abs(receiver.status.mhz - band.mhz) < max(band.mhz * 0.03, 0.15), led: Rig.lcd, action: { tune(band) }) {
-                    EngravedLabel(text: band.name, size: band.name.count > 3 ? 7 : 9)
+                    EngravedLabel(text: band.name, size: band.name.count > 6 ? 6 : band.name.count > 3 ? 7 : 9)
                 }
                 .frame(height: 30)
                 .opacity(receiver.canReach(mhz: band.mhz) ? 1 : 0.25)
@@ -268,7 +284,13 @@ struct HamPage: View {
     }
 
     private func tune(_ band: RigBand) {
-        if voiceMode == .usb || voiceMode == .lsb { onair_general_set(band.mhz < 10 ? 4 : 3, 0) }   // LSB below 10 MHz, USB above
+        if isShortwave && shortcuts == "DIGITAL" {
+            onair_general_set(3, 0)   // these are all upper sideband
+        } else if isShortwave && shortcuts == "UTILITY" {
+            onair_general_set(band.name.hasPrefix("WWV") || band.name.hasPrefix("CHU") ? 2 : 3, 0)   // time signals are AM, the rest USB
+        } else if voiceMode == .usb || voiceMode == .lsb {
+            onair_general_set(band.mhz < 10 ? 4 : 3, 0)   // LSB below 10 MHz, USB above
+        }
         if isShortwave { onair_sw_tune_khz(band.mhz * 1000) } else { receiver.tune(mhz: band.mhz) }
         receiver.refresh()
     }

@@ -51,6 +51,8 @@ Last full sweep: 183 of 183 modes start with the settings drawer open and none c
 
 SELCAL shows "listening" on the test signal, and that is expected: the app picks USB on HF and AM on VHF, and the signal is FM. HF ID, ASTERIX, Custom decoders and Add-ons have no test input.
 
+Antenna is remembered per mode. Both reads the two receivers together and combines them (`dsp/diversity.h`): it ran on the E310 at 4 Msps with 99% of the samples arriving, about 57 dB on FM against about 52 on RX1 and 60 on RX2 with automatic gain moving, so no gain is proven yet. The Bearing drawer turns the phase between the receivers into an angle (`ios/host/bearing_host.cpp`); it read a stable 99% agreement, but the angle has not been checked against a known direction. Saved across restarts and checked: FM and DAB scans, antenna per mode. Aircraft lookups are kept for 30 days but have not been checked after a restart.
+
 ## How mode settings reach the native drawers
 
 `ios/host/imgui_reflect.cpp`. There is no wiring per mode. The desktop's panels still run, but `imgui_widgets.cpp` and `imgui.cpp` are compiled with their widgets renamed (`ios/core/CMakeLists.txt`) and the wrappers report what each widget is, instead of drawing it. An edit in a native control comes back as if the widget had been used, so it goes through the panel's own logic. Tooltips become the help text, and a new setting upstream appears by itself.

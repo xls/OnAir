@@ -15,6 +15,8 @@ final class Receiver {
         var family = -1
         var error = ""
         var scan = false
+        var dual = false
+        var delivered = 0   // percent of the radio's samples arriving, when too few do
         var hamItUpTop = 0   // MHz, when tuned above what the Ham It Up in use passes
     }
 
@@ -32,6 +34,8 @@ final class Receiver {
     private(set) var status = Status()
     private(set) var rate = Rate()
     private(set) var filterBand: ClosedRange<Double>?
+    private(set) var radioShortPercent = 0   // held on for a moment, so a dip does not flash it
+    private var shortTicks = 0
     private(set) var devices: [String] = []
     var videoFullscreen = false
 
@@ -39,6 +43,9 @@ final class Receiver {
         guard let text = onair_status_json() else { return }
         if let new = try? JSONDecoder().decode(Status.self, from: Data(String(cString: text).utf8)) { status = new }
         if let text = onair_rate_json(), let new = try? JSONDecoder().decode(Rate.self, from: Data(String(cString: text).utf8)), new != rate { rate = new }
+        shortTicks = status.delivered > 0 ? min(shortTicks + 1, 40) : max(shortTicks - 1, 0)
+        if status.delivered > 0, shortTicks >= 12 { radioShortPercent = status.delivered }
+        if shortTicks == 0 { radioShortPercent = 0 }
         var low = 0.0, high = 0.0
         let band = onair_filter_band(&low, &high) && high > low ? low...high : nil
         if band != filterBand { filterBand = band }

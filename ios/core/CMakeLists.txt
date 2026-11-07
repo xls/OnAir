@@ -15,17 +15,17 @@ add_subdirectory("${_onair_repo}" "${CMAKE_BINARY_DIR}/onair-core" EXCLUDE_FROM_
 
 set(ONAIR_IIO_SYMBOLS "" CACHE FILEPATH "Generated table of libiio functions (build_core.sh)")
 # results_json.cpp turns telemetry into cards and tables. It has no Android code in it, so it is shared rather than copied
-target_sources(dect2 PRIVATE "${_onair_repo}/android/native/src/results_json.cpp" ../host/onair_host.mm ../host/results_aviation.cpp ../host/results_satellite.cpp ../host/results_iot.cpp ../host/results_utility.cpp ../host/iptv_host.cpp ../host/iq_host.cpp ../host/imgui_reflect.cpp ../host/shortwave_host.cpp ../shim/glfw_shim.mm ../platform/power_ios.mm ../platform/airplay_ios.mm)
+target_sources(dect2 PRIVATE "${_onair_repo}/android/native/src/results_json.cpp" ../host/onair_host.mm ../host/results_aviation.cpp ../host/results_satellite.cpp ../host/results_iot.cpp ../host/results_utility.cpp ../host/iptv_host.cpp ../host/iq_host.cpp ../host/bearing_host.cpp ../host/imgui_reflect.cpp ../host/shortwave_host.cpp ../shim/glfw_shim.mm ../platform/power_ios.mm ../platform/airplay_ios.mm)
 target_include_directories(dect2 PRIVATE include ../host "${_onair_repo}/android/native/src")
 
 # The widgets the native drawers read keep their names for ../host/imgui_reflect.cpp, which wraps them; imgui_widgets.cpp itself is untouched
 set(_reflect_defs "")
-foreach(w Checkbox BeginCombo EndCombo Combo Selectable SliderFloat SliderInt InputDouble InputFloat InputInt InputText InputTextWithHint RadioButton Button SmallButton CollapsingHeader TextUnformatted Text TextColored TextDisabled TextWrapped BeginTabBar EndTabBar BeginTabItem EndTabItem InvisibleButton)
+foreach(w Checkbox BeginCombo EndCombo Combo Selectable SliderFloat SliderInt InputDouble InputFloat InputInt InputText InputTextWithHint RadioButton Button SmallButton CollapsingHeader TextUnformatted Text TextColored TextDisabled TextWrapped BeginTabBar EndTabBar BeginTabItem EndTabItem InvisibleButton TreeNode TreeNodeEx TreePop)
   list(APPEND _reflect_defs "${w}=Orig_${w}")
 endforeach()
 set_property(SOURCE "${_onair_repo}/third_party/imgui/imgui_widgets.cpp" TARGET_DIRECTORY imgui APPEND PROPERTY COMPILE_DEFINITIONS ${_reflect_defs})
 set(_reflect_defs "")
-foreach(w PushID IsItemHovered BeginTooltip EndTooltip SetTooltip SetTooltipV BeginItemTooltip SetItemTooltip SetItemTooltipV)
+foreach(w BeginPopup EndPopup PushID IsItemHovered BeginTooltip EndTooltip SetTooltip SetTooltipV BeginItemTooltip SetItemTooltip SetItemTooltipV)
   list(APPEND _reflect_defs "${w}=Orig_${w}")
 endforeach()
 set_property(SOURCE "${_onair_repo}/third_party/imgui/imgui.cpp" TARGET_DIRECTORY imgui APPEND PROPERTY COMPILE_DEFINITIONS ${_reflect_defs})

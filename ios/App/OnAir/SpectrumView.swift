@@ -196,7 +196,7 @@ struct SpectrumMetalView: UIViewRepresentable {
 
 /// Reads the finger gestures. UIKit is used here because it can tell one finger from two. Two fingers either pan or zoom, whichever their
 /// first movement shows; after that the gesture stays that kind until the fingers lift. Up and down changes the height of the signals.
-private struct SpectrumGestures: UIViewRepresentable {
+struct SpectrumGestures: UIViewRepresentable {
     enum TwoFingers { case undecided, pan, zoom, height }
 
     let tap: (CGFloat) -> Void
@@ -390,7 +390,7 @@ struct SpectrumPage: View {
         let start = scrubStart ?? receiver.status.mhz
         scrubStart = done ? nil : start
         let spanMhz = (spectrum.highHz - spectrum.lowHz) / 1e6
-        let fine = scrubStep(spanMhz: spanMhz, width: width)
+        let fine = Self.scrubStep(spanMhz: spanMhz, width: width)
         let snapped = max(((start + points / width * spanMhz) / fine).rounded() * fine, 0.001)   // the core's lowest frequency, 1 kHz
         guard abs(snapped - lastScrub) >= fine / 2, done || Date().timeIntervalSince(lastTuneTime) > 0.04 else { return }
         lastScrub = done ? 0 : snapped
@@ -401,7 +401,7 @@ struct SpectrumPage: View {
         keepInView(mhz: snapped)
     }
 
-    private func scrubStep(spanMhz: Double, width: CGFloat) -> Double {
+    static func scrubStep(spanMhz: Double, width: CGFloat) -> Double {
         // one point of finger travel is one point of the view, so the step follows the zoom
         let perPoint = spanMhz / max(width, 1)
         return [0.000001, 0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.0125, 0.025, 0.1, 0.5].first { $0 >= perPoint } ?? 1
@@ -456,5 +456,62 @@ struct FilterBox: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// The same fingers as the Spectrum page, for the small spectrum of the rig pages.
+struct RigSpectrumTouch: View {
+    let receiver: Receiver
+    let spectrum: SpectrumRenderer
+    @State private var scrubStart: Double?
+    @State private var pinchStart: Double?
+    @State private var lastTune = Date.distantPast
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            ZStack(alignment: .bottomTrailing) {
+                SpectrumGestures(
+                    tap: { x in
+                        onair_spectrum_tune(spectrum.frequency(atFraction: x / width) / 1e6)
+                        receiver.refresh()
+                    },
+                    scrub: { points, done in scrub(points, width, done) },
+                    pan: { change, _ in
+                        setView(centre: spectrum.visibleCentre - Double(change / width) * spectrum.visibleSpan, span: spectrum.visibleSpan)
+                    },
+                    zoom: { scale, done in
+                        let start = pinchStart ?? spectrum.visibleSpan
+                        pinchStart = done ? nil : start
+                        setView(centre: spectrum.visibleCentre, span: start / max(scale, 0.01))
+                    },
+                    height: { factor, done in spectrum.scaleHeight(by: factor, done: done) }
+                )
+                if spectrum.visibleSpan < 1 {
+                    HardwareKey(lit: true, action: { setView(centre: 0.5, span: 1) }) {
+                        EngravedLabel(text: "RESET", size: 7)
+                    }
+                    .frame(width: 58, height: 30)
+                    .padding(3)
+                }
+            }
+        }
+    }
+
+    private func scrub(_ points: CGFloat, _ width: CGFloat, _ done: Bool) {
+        let start = scrubStart ?? receiver.status.mhz
+        scrubStart = done ? nil : start
+        let spanMhz = (spectrum.highHz - spectrum.lowHz) / 1e6
+        let fine = SpectrumPage.scrubStep(spanMhz: spanMhz, width: width)
+        guard done || Date().timeIntervalSince(lastTune) > 0.04 else { return }
+        lastTune = Date()
+        onair_spectrum_scrub(max(((start + points / width * spanMhz) / fine).rounded() * fine, 0.001))
+        receiver.refresh()
+    }
+
+    private func setView(centre: Double, span: Double) {
+        let span = min(max(span, 0.002), 1)
+        spectrum.visibleSpan = span
+        spectrum.visibleCentre = min(max(centre, span / 2), 1 - span / 2)
     }
 }

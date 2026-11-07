@@ -3,9 +3,11 @@ import SwiftUI
 
 /// What the public databases know about an aircraft. Only its code and callsign are sent, and only when one is tapped.
 @MainActor @Observable final class AircraftLookup {
-    struct Info {
+    struct Info: Codable {
         var type = "", registration = "", owner = "", photo: URL?
         var airline = "", route = "", routeDetail = ""
+        var found = Date()
+        var isEmpty: Bool { type.isEmpty && route.isEmpty }
     }
 
     private struct AircraftReply: Decodable {
@@ -30,8 +32,17 @@ import SwiftUI
     }
 
     static let shared = AircraftLookup()
-    private(set) var known: [String: Info] = [:]
-    private var asked = Set<String>()
+    private static let file = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("aircraft.json")
+    private static let keptFor: TimeInterval = 30 * 86400   // a route changes; an aircraft rarely does
+    private(set) var known: [String: Info]
+    private var asked: Set<String>
+
+    private init() {
+        let saved = (try? Data(contentsOf: Self.file)).flatMap { try? JSONDecoder().decode([String: Info].self, from: $0) } ?? [:]
+        let fresh = saved.filter { Date().timeIntervalSince($0.value.found) < Self.keptFor }
+        known = fresh
+        asked = Set(fresh.keys)
+    }
 
     private func get<T: Decodable>(_ type: T.Type, _ path: String) async -> T? {
         guard let url = URL(string: "https://api.adsbdb.com/v0/\(path)") else { return nil }
@@ -58,6 +69,11 @@ import SwiftUI
                 info.routeDetail = "\(r.origin.iata_code) to \(r.destination.iata_code)"
             }
             known[key] = info
+            if info.isEmpty {
+                asked.remove(key)   // nothing, perhaps no internet: asked again on the next tap, and not kept
+            } else if let data = try? JSONEncoder().encode(known.filter { !$0.value.isEmpty }) {
+                try? data.write(to: Self.file)
+            }
         }
     }
 }

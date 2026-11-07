@@ -36,6 +36,11 @@ bool Orig_SmallButton(const char*);
 bool Orig_CollapsingHeader(const char*, ImGuiTreeNodeFlags);
 bool Orig_CollapsingHeader(const char*, bool*, ImGuiTreeNodeFlags);
 void Orig_TextUnformatted(const char*, const char*);
+bool Orig_BeginPopup(const char*, ImGuiWindowFlags);
+void Orig_EndPopup();
+bool Orig_TreeNode(const char*);
+bool Orig_TreeNodeEx(const char*, ImGuiTreeNodeFlags);
+void Orig_TreePop();
 void Orig_PushID(const char*);
 void Orig_PushID(const char*, const char*);
 void Orig_PushID(const void*);
@@ -72,6 +77,7 @@ int gCombo = -1;   // an index: a panel may add more items inside an open combo,
 int gOption = 0;
 bool gInTooltip = false;
 bool gNotes = false;
+int gFakePopups = 0;   // gear menus entered during a pass: nothing was opened, so nothing may be closed
 std::string gPushed;   // the text of the last PushID: icon buttons keep their name there
 
 std::string visible(const char* label) {   // the part of a label ImGui shows
@@ -178,12 +184,14 @@ std::string end() {
     std::string before;   // the control just above: a nameless setting beside a switch belongs to it
     for (Item& it : gItems) {
         const bool readout = it.guessed && it.label.find_first_of("0123456789") != std::string::npos;
-        if ((it.label.empty() || readout || meaningless(it.label)) && it.kind != "note") it.label = it.help.empty() ? std::string() : shortHelp(it.help);
-        if (it.label.empty() && it.kind != "note" && it.kind != "button" && !before.empty()) it.label = before + " setting";
-        if (it.kind != "note" && it.kind != "button" && it.label.find(" setting") == std::string::npos) before = it.label;
+        if (it.kind == "pick" && it.label.empty()) continue;
+        if ((it.label.empty() || readout || meaningless(it.label)) && it.kind != "note" && it.kind != "pick") it.label = it.help.empty() ? std::string() : shortHelp(it.help);
+        if (it.label.empty() && it.kind != "note" && it.kind != "button" && it.kind != "pick" && !before.empty()) it.label = before + " setting";
+        if (it.kind != "note" && it.kind != "button" && it.kind != "pick" && it.label.find(" setting") == std::string::npos) before = it.label;
         it.label = readable(it.label);
         if (it.kind == "button" && !workingButton(it.label)) continue;
-        if (it.kind != "note" && desktopOnly(it.label)) continue;
+        if (it.kind != "note" && it.kind != "pick" && desktopOnly(it.label)) continue;
+        if (std::any_of(it.options.begin(), it.options.end(), [](const std::string& o) { return o == "CSV" || o == "Since start"; })) continue;   // how to export a file
         if (lower(it.label) == "compute") continue;   // where the error correction runs: stays on Auto, there is nothing on the phone to see from it
         if (j.size() > 1) j += ",";
         j += "{\"id\":" + std::to_string(it.id) + ",\"kind\":\"" + it.kind + "\",\"label\":\"" + dect2::jsonEscape(it.label) + "\",\"section\":\"" + dect2::jsonEscape(it.section) +
@@ -244,7 +252,12 @@ bool Combo(const char* label, int* current, const char* (*getter)(void*, int), v
 }
 
 static bool option(const char* label, bool selected) {
-    if (gCombo < 0) return false;
+    if (gCombo < 0) {   // a row of a list: only the results of a scan can be tapped
+        if (!gNotes) return false;
+        const bool hit = edited(label);
+        add("pick", label);
+        return hit;
+    }
     Item& combo = gItems[(size_t)gCombo];
     const int index = gOption++;
     combo.options.push_back(desktopOnly(label) ? std::string() : visible(label));   // blank keeps the numbering of the rest
@@ -333,7 +346,13 @@ static void remember(const char* text, const char* end = nullptr) {
         return;
     }
     if (!gItems.empty() && gItems.back().label.empty() && gItems.back().kind == "toggle") gItems.back().label = t.substr(0, 40);   // a list row: its name comes after the box
-    if (gNotes && gCombo < 0 && !t.empty() && gNoteCount < 8) {
+    if (gNotes && gCombo < 0 && !gItems.empty() && gItems.back().kind == "pick" && !t.empty()) {   // the columns of a tappable result
+        Item& row = gItems.back();
+        if (row.label.empty()) row.label = t.substr(0, 40);
+        else if (row.help.size() < 120) row.help += (row.help.empty() ? "" : " · ") + t;
+        return;
+    }
+    if (gNotes && gCombo < 0 && !t.empty() && gNoteCount < 40) {
         gNoteCount++;
         Item note;
         note.id = ImHashStr(t.c_str());
@@ -378,6 +397,42 @@ bool InvisibleButton(const char* id, const ImVec2& size, ImGuiButtonFlags flags)
     }
     return hit;
 }
+
+bool BeginPopup(const char* id, ImGuiWindowFlags flags) {
+    if (!gOn) return Orig_BeginPopup(id, flags);
+    gFakePopups++;
+    return true;
+}
+void EndPopup() {
+    if (gFakePopups > 0) { gFakePopups--; return; }
+    Orig_EndPopup();
+}
+
+// sections folded on the desktop are read too; nothing was pushed, so TreePop has nothing to undo
+static bool foldOpen(const char* label) {
+    const std::string name = visible(label);
+    if (!name.empty()) gSection = name;
+    return true;
+}
+bool TreeNode(const char* label) { return gOn ? foldOpen(label) : Orig_TreeNode(label); }
+bool TreeNodeEx(const char* label, ImGuiTreeNodeFlags flags) { return gOn ? foldOpen(label) : Orig_TreeNodeEx(label, flags); }
+bool TreeNode(const char* id, const char* fmt, ...) {
+    if (gOn) return true;
+    va_list args; va_start(args, fmt); const bool open = TreeNodeV(id, fmt, args); va_end(args); return open;
+}
+bool TreeNode(const void* id, const char* fmt, ...) {
+    if (gOn) return true;
+    va_list args; va_start(args, fmt); const bool open = TreeNodeV(id, fmt, args); va_end(args); return open;
+}
+bool TreeNodeEx(const char* id, ImGuiTreeNodeFlags flags, const char* fmt, ...) {
+    if (gOn) return true;
+    va_list args; va_start(args, fmt); const bool open = TreeNodeExV(id, flags, fmt, args); va_end(args); return open;
+}
+bool TreeNodeEx(const void* id, ImGuiTreeNodeFlags flags, const char* fmt, ...) {
+    if (gOn) return true;
+    va_list args; va_start(args, fmt); const bool open = TreeNodeExV(id, flags, fmt, args); va_end(args); return open;
+}
+void TreePop() { if (!gOn) Orig_TreePop(); }
 
 bool BeginTabBar(const char* id, ImGuiTabBarFlags flags) { return gOn ? true : Orig_BeginTabBar(id, flags); }
 void EndTabBar() { if (!gOn) Orig_EndTabBar(); }

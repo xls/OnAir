@@ -26,6 +26,7 @@
 #include "dect2/engine/rate_choice.h"
 #include "dect2/general/general_rx.h"
 #include "imgui_reflect.h"
+#include <algorithm>
 #include "dect2/source/converter.h"
 #include "dect2/net/remote_api.h"
 #import <QuartzCore/QuartzCore.h>
@@ -172,6 +173,7 @@ void readOptions(App& a) {
         if (m->tab) { reflect::section("Options"); m->tab(a); }
         if (m->receiver) { reflect::section("Receiver"); m->receiver(a); }
         if (m->list) { reflect::section("List"); m->list(a); }
+        if (m->panels) { reflect::section("Analysis"); m->panels(a); }
         ImGui::PopID();
     } else {   // the TV modes: their tuner and decoder are in the top bar's pieces
         reflect::section("Tuning");
@@ -221,6 +223,9 @@ static const HamItUp* hamItUpInUse(const App& a) {
     return &kHamItUps[0];
 }
 
+static bool antennaForMode(App& a, int family);
+static void keepDabScan(App& a);
+static void restoreDabScan(App& a);
 static bool gStartTried = false;   // the last thing asked of POWER was to start: its refusal is shown until something changes
 
 extern "C" {
@@ -247,6 +252,7 @@ bool onair_start(void* layer, const char*) {
     static char* argv[] = {name, nullptr};
     if (!appRunInit(1, argv)) return false;
     gCoreUp = true;
+    restoreDabScan(appRunApp());
     // Auto gain unless the gain was set by hand: at a fixed low gain the converter's own noise hides weak signals and bends the noise floor
     appRunApp().agcOn = ![NSUserDefaults.standardUserDefaults boolForKey:@"manualGain"];
     appRunApp().tune.synth.dvbt = true;   // the T2 test signal has no programme; the DVB-T one carries a picture and sound
@@ -400,7 +406,14 @@ const char* onair_mode_group(int i) { const int g = kModes[i].group; return g >=
 const char* onair_mode_blurb(int i) { return kModes[i].blurb ? kModes[i].blurb : ""; }
 int onair_mode_family(int i) { return kModes[i].family; }
 bool onair_mode_is_selected(int i) { return gCoreUp && modeSelected(appRunApp(), kModes[i]); }
-void onair_mode_select(int i) { if (!gCoreUp) return; gStartTried = false; selectMode(appRunApp(), kModes[i].family, kModes[i].subId); }
+void onair_mode_select(int i) {
+    if (!gCoreUp) return;
+    gStartTried = false;
+    App& a = appRunApp();
+    const bool moved = antennaForMode(a, kModes[i].family);
+    selectMode(a, kModes[i].family, kModes[i].subId);
+    if (moved && a.engine.running()) startReceiver(a);
+}
 
 bool onair_spectrum(float* bins, int n, double* meta) {
     App& a = appRunApp();
@@ -960,6 +973,18 @@ static void applyAntennaConverter(App& a) {
     }
 }
 
+// The antenna chosen in a mode comes back with that mode ("ant.<family>" among the radio's settings)
+static bool antennaForMode(App& a, int family) {
+    const auto& settings = a.devices[(size_t)a.devIdx].settings;
+    if (std::none_of(settings.begin(), settings.end(), [](const dect2::RadioSetting& r) { return r.key == "antenna"; })) return false;
+    const auto wanted = a.tune.radio.find("ant." + std::to_string(family));
+    if (wanted == a.tune.radio.end() || wanted->second == antennaOf(a)) return false;
+    a.tune.radio["antenna"] = wanted->second;
+    applyAntennaConverter(a);
+    saveRadioSettings(a);
+    return true;
+}
+
 void onair_antenna_converter_model(const char* antenna, const char* model) {
     appRunApp().tune.radio[std::string("conv.") + antenna + ".model"] = model;
     saveRadioSettings(appRunApp());
@@ -1023,7 +1048,10 @@ void onair_radio_setting_set(const char* key, const char* value) {
     for (const dect2::RadioSetting& r : d.settings) {
         if (r.key != key) continue;
         a.tune.radio[r.key] = value;
-        if (r.key == "antenna") applyAntennaConverter(a);
+        if (r.key == "antenna") {
+            applyAntennaConverter(a);
+            a.tune.radio["ant." + std::to_string(a.family)] = value;
+        }
         saveRadioSettings(a);
         if (!a.engine.running()) return;
         if (r.restart) startReceiver(a); else a.engine.retune(a.tune);
@@ -1035,7 +1063,9 @@ bool onair_mode_select_named(const char* name) {
     App& a = appRunApp();
     for (const auto& m : allModes()) {
         if (strcasecmp(m.name, name) && !(m.sub && !strcasecmp(m.sub, name))) continue;
+        const bool moved = antennaForMode(a, m.family);
         selectMode(a, m.family, m.subId);
+        if (moved && a.engine.running()) startReceiver(a);
         return true;
     }
     return false;
@@ -1068,16 +1098,46 @@ const char* onair_verify_line(void) {
     return gJson.c_str();
 }
 
+// The desktop forgets a DAB scan when it closes; here the found ensembles stay, as FM's stations do
+static void keepDabScan(App& a) {
+    static std::string saved;
+    if (a.dabScan.running) return;
+    std::string text;
+    for (const auto& r : a.dabScan.results) {
+        if (!r.found) continue;
+        text += r.name + "\t" + r.label + "\t" + r.stations + "\t" + std::to_string(r.mhz) + "\t" + std::to_string(r.snr) + "\n";
+    }
+    if (text == saved || (text.empty() && saved.empty())) return;
+    saved = text;
+    [NSUserDefaults.standardUserDefaults setObject:[NSString stringWithUTF8String:text.c_str()] forKey:@"dabScanResults"];
+}
+
+static void restoreDabScan(App& a) {
+    NSString* text = [NSUserDefaults.standardUserDefaults stringForKey:@"dabScanResults"];
+    if (!text) return;
+    for (NSString* line in [text componentsSeparatedByString:@"\n"]) {
+        NSArray<NSString*>* parts = [line componentsSeparatedByString:@"\t"];
+        if (parts.count != 5) continue;
+        App::DabScan::Res r;
+        r.name = parts[0].UTF8String; r.label = parts[1].UTF8String; r.stations = parts[2].UTF8String;
+        r.mhz = parts[3].doubleValue; r.snr = parts[4].floatValue; r.found = true;
+        a.dabScan.results.push_back(r);
+    }
+}
+
 const char* onair_status_json(void) {
     App& a = appRunApp();
     std::string mode;
     for (const auto& m : allModes()) if (modeSelected(a, m)) mode = m.name;
     const std::string source = a.devIdx >= 0 && a.devIdx < (int)a.devices.size() ? a.devices[(size_t)a.devIdx].name : "";
     const HamItUp* converter = a.devices[(size_t)a.devIdx].isRadio() ? hamItUpInUse(a) : nullptr;
+    const dect2::SampleLoss loss = a.engine.sampleLoss();
+    const int deliveredLow = a.engine.running() && loss.rateLow ? (int)loss.deliveredPct : 0;   // the percentage, when a live radio falls short
+    keepDabScan(a);
     const int hamItUpTop = converter && a.freqMhz * 1e6 > converter->highHz ? (int)(converter->highHz / 1e6) : 0;   // the top of it, when tuned above
     gStatus = "{\"running\":" + std::string(a.engine.running() ? "true" : "false") + ",\"mhz\":" + std::to_string(a.freqMhz) + ",\"mode\":\"" +
               dect2::jsonEscape(mode) + "\",\"source\":\"" + dect2::jsonEscape(source) + "\",\"volume\":" + std::to_string(a.volume) +
-              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"scan\":" + (modeHasScan(a) ? "true" : "false") + ",\"hamItUpTop\":" + std::to_string(hamItUpTop) + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
+              ",\"muted\":" + (a.muted ? "true" : "false") + ",\"family\":" + std::to_string(a.family) + ",\"scan\":" + (modeHasScan(a) ? "true" : "false") + ",\"dual\":" + (a.devices[(size_t)a.devIdx].isRadio() && antennaOf(a) == "both" ? "true" : "false") + ",\"delivered\":" + std::to_string(deliveredLow) + ",\"hamItUpTop\":" + std::to_string(hamItUpTop) + ",\"error\":\"" + dect2::jsonEscape(gStartTried && !a.engine.running() ? a.engine.startError() : "") + "\"}";
     return gStatus.c_str();
 }
 

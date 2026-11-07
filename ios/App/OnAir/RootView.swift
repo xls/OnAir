@@ -76,8 +76,18 @@ struct RootView: View {
                 OnAirView().opacity(0).allowsHitTesting(false)
                 Color.black
                 nativePage
+                if receiver.radioShortPercent > 0 {   // over the page, so nothing moves when it comes and goes
+                    Label("The radio delivers \(receiver.radioShortPercent)% of its samples. Another program may be connected to it.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(red: 0.3, green: 0.2, blue: 0.04).opacity(0.94))
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .allowsHitTesting(false)
+                }
                 if started && tab != .device && tab != .settings && !receiver.videoFullscreen {
-                    DrawerHandle(hasScan: receiver.status.scan) { kind in withAnimation(.easeOut(duration: 0.22)) { drawer = kind } }
+                    DrawerHandle(hasScan: receiver.status.scan, hasBearing: receiver.status.dual) { kind in withAnimation(.easeOut(duration: 0.22)) { drawer = kind } }
                 }
                 if let drawer {
                     SideDrawer(mode: receiver.status.mode, kind: drawer) { withAnimation(.easeOut(duration: 0.2)) { self.drawer = nil } }
@@ -163,6 +173,9 @@ struct RootView: View {
     }
 
     private func applyTestArguments() {
+        #if !DEBUG
+        return
+        #endif
         let args = ProcessInfo.processInfo.arguments
         func value(_ name: String) -> String? {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
@@ -221,6 +234,7 @@ struct RootView: View {
         if let path = value("--tx-file") { transmitToFile(path, mode: value("--mode") ?? "") }
         if args.contains("--option-sweep") { Task { await OptionSweep.run() } }
         if args.contains("--open-options") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { drawer = .settings } }
+        if args.contains("--open-bearing") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { drawer = .bearing } }
         if args.contains("--open-scan") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { drawer = .scan } }
         if args.contains("--options") {
             onair_options_watch(true)

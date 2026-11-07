@@ -11,17 +11,19 @@ struct PanelOption: Decodable, Identifiable {
 }
 
 enum DrawerKind: String, Identifiable {
-    case settings, scan
+    case settings, scan, bearing
     var id: Self { self }
 }
 
 /// The tabs on the right edge that pull the drawers in: tap one or swipe it to the left.
 struct DrawerHandle: View {
     let hasScan: Bool
+    let hasBearing: Bool
     let open: (DrawerKind) -> Void
 
     var body: some View {
         VStack(spacing: 8) {
+            if hasBearing { tab("BEARING", .bearing) }
             if hasScan { tab("SCAN", .scan) }
             tab("SETTINGS", .settings)
         }
@@ -46,7 +48,7 @@ struct DrawerHandle: View {
         .contentShape(Rectangle())
         .onTapGesture { open(kind) }
         .gesture(DragGesture(minimumDistance: 6).onEnded { if $0.translation.width < 0 { open(kind) } })
-        .accessibilityLabel(title == "SCAN" ? "Scan" : "Settings for this mode")
+        .accessibilityLabel(title == "SETTINGS" ? "Settings for this mode" : title.capitalized)
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -62,7 +64,7 @@ struct SideDrawer: View {
             Color.black.opacity(0.3).contentShape(Rectangle()).onTapGesture(perform: close).transition(.opacity)
             HStack(spacing: 0) {
                 Capsule().fill(Color.white.opacity(0.5)).frame(width: 4, height: 44).padding(.horizontal, 4)
-                OptionsDrawer(mode: mode, kind: kind)
+                if kind == .bearing { BearingPanel() } else { OptionsDrawer(mode: mode, kind: kind) }
             }
             .background(BrushedMetal(tone: 0.46))
             .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12))
@@ -173,7 +175,13 @@ private struct OptionSection: View {
             ForEach(parts) { part in
                 switch part {
                 case .single(let option):
-                    if option.kind == "note" {
+                    if option.kind == "pick" {
+                        Button { onair_option_set(option.id, "1") } label: {
+                            PanelRow(label: option.label, help: option.help) { Image(systemName: "dot.radiowaves.right").foregroundStyle(RadioTheme.amber) }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    } else if option.kind == "note" {
                         Text(option.label)
                             .font(.system(size: 12, design: .rounded))
                             .foregroundStyle(RadioTheme.amber.opacity(0.75))
@@ -329,5 +337,105 @@ enum OptionSweep {
         }
         let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("effects.json")
         try? JSONEncoder().encode(out).write(to: file)
+    }
+}
+
+/// Which way a signal comes from, by the phase between the two antennas: a needle from straight ahead to either side.
+struct BearingPanel: View {
+    private struct Reading: Decodable {
+        var ok = false
+        var phaseDeg = 0.0
+        var coherence = 0.0
+        var hz = 0.0
+    }
+
+    @AppStorage("bearingSpacing") private var spacing = 0.0     // metres; 0 = half a wavelength
+    @AppStorage("bearingZero") private var zero = 0.0           // the phase of a signal straight ahead
+    @State private var reading = Reading()
+    @State private var smooth = CGPoint.zero
+    @State private var entry = ""
+    @FocusState private var typing: Bool
+    @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+
+    private var phase: Double { atan2(smooth.y, smooth.x) * 180 / .pi }
+    private var wavelength: Double { reading.hz > 0 ? 299_792_458 / reading.hz : 0 }
+    private var metres: Double { spacing > 0 ? spacing : wavelength / 2 }
+
+    /// d sin(angle) = wavelength * phase / 360
+    private var sine: Double? {
+        guard reading.ok, metres > 0, reading.coherence > 0.3 else { return nil }
+        var turned = (phase - zero).truncatingRemainder(dividingBy: 360)
+        if turned > 180 { turned -= 360 } else if turned < -180 { turned += 360 }
+        return wavelength * turned / 360 / metres
+    }
+
+    private var angle: Double? { sine.map { asin(min(max($0, -1), 1)) * 180 / .pi } }
+
+    var body: some View {
+        PanelPage {
+            PanelSection(title: "Bearing") {
+                Canvas { context, size in
+                    let centre = CGPoint(x: size.width / 2, y: size.height - 8), radius = min(size.width / 2 - 8, size.height - 16)
+                    var dial = Path()
+                    dial.addArc(center: centre, radius: radius, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+                    context.stroke(dial, with: .color(RadioTheme.amber.opacity(0.5)), lineWidth: 1.5)
+                    for mark in stride(from: -90.0, through: 90, by: 30) {
+                        let r = (mark - 90) * .pi / 180
+                        var tick = Path()
+                        tick.move(to: CGPoint(x: centre.x + cos(r) * radius, y: centre.y + sin(r) * radius))
+                        tick.addLine(to: CGPoint(x: centre.x + cos(r) * (radius - 8), y: centre.y + sin(r) * (radius - 8)))
+                        context.stroke(tick, with: .color(RadioTheme.amber.opacity(0.7)), lineWidth: 1)
+                    }
+                    if let angle {
+                        let r = (angle - 90) * .pi / 180
+                        var needle = Path()
+                        needle.move(to: centre)
+                        needle.addLine(to: CGPoint(x: centre.x + cos(r) * (radius - 4), y: centre.y + sin(r) * (radius - 4)))
+                        context.stroke(needle, with: .color(.red), lineWidth: 2.5)
+                    }
+                }
+                .frame(height: 130)
+                .padding(10)
+                PanelRow(label: "Angle", help: "From straight ahead. Two antennas cannot tell in front from behind.") {
+                    Text(angleText).font(.system(size: 15, design: .monospaced)).foregroundStyle(RadioTheme.amber)
+                }
+                PanelRow(label: "Agreement", help: "How alike the antennas hear it. Low: a reflection, two signals, or nothing there.") {
+                    Text(String(format: "%.0f %%", reading.coherence * 100)).font(.system(size: 13, design: .monospaced)).foregroundStyle(RadioTheme.amber)
+                }
+                PanelRow(label: "Spacing (m)", help: "Between the two antennas. Half a wavelength here is \(String(format: "%.2f", wavelength / 2)) m. Blank uses that.") {
+                    GlassWindow(corner: 4) {
+                        TextField("auto", text: $entry)
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(RadioTheme.amber)
+                            .multilineTextAlignment(.trailing)
+                            .keyboardType(.decimalPad)
+                            .focused($typing)
+                            .padding(6)
+                    }
+                    .frame(width: 84, height: 32)
+                }
+            }
+            HardwareKey(action: { zero = phase }) { EngravedLabel(text: "THIS SIGNAL IS STRAIGHT AHEAD", size: 8) }
+                .frame(height: 46)
+            Text("The two receivers start at an unknown phase. Face a signal you know, tap the key, and do it again after any retune or restart.")
+                .font(.footnote)
+                .foregroundStyle(Color(white: 0.08))
+        }
+        .onAppear { entry = spacing > 0 ? String(spacing) : "" }
+        .onChange(of: typing) { if !typing { spacing = Double(entry) ?? 0 } }
+        .onReceive(tick) { _ in
+            guard let text = onair_bearing_json(), let new = try? JSONDecoder().decode(Reading.self, from: Data(String(cString: text).utf8)) else { return }
+            reading = new
+            guard new.ok else { return }
+            let r = new.phaseDeg * .pi / 180   // averaged as an arrow, so it can pass through 180
+            smooth = CGPoint(x: smooth.x * 0.7 + cos(r) * 0.3, y: smooth.y * 0.7 + sin(r) * 0.3)
+        }
+    }
+
+    private var angleText: String {
+        guard reading.ok else { return "start the radio" }
+        guard let angle else { return "no clear signal" }
+        if (sine.map(abs) ?? 0) > 1 { return "out of range" }
+        return abs(angle) < 1 ? "ahead" : String(format: "%.0f° %@", abs(angle), angle < 0 ? "left" : "right")
     }
 }

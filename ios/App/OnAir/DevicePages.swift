@@ -29,13 +29,13 @@ struct SourcePage: View {
             }
             if let antenna {
                 PanelSection(title: "Antenna") {
-                    PanelRow(label: "Receive on", help: "Radios with two receivers. Changing it restarts the radio.") {
+                    PanelRow(label: "Receive on", help: "Remembered for each mode. Changing it restarts the radio.") {
                         SelectorWindow(selected: antenna.names[antenna.values.firstIndex(of: antenna.value) ?? 0], options: antenna.names) { index in
                             onair_radio_setting_set("antenna", antenna.values[index])
                             loadAntenna()
                         }
                     }
-                    ForEach(Array(zip(antenna.values, antenna.names)), id: \.0) { value, name in
+                    ForEach(Array(zip(antenna.values, antenna.names)).filter { $0.0 != "both" }, id: \.0) { value, name in
                         PanelRow(label: "Ham It Up on \(name)", help: "Set the unit to Upconvert for HF. Above that, use Passthrough and turn this off.") {
                             RockerSwitch(isOn: Binding(get: { value == "rx1" ? upconverters.rx1 : upconverters.rx2 }, set: { on in
                                 onair_antenna_converter_set(value, on)
