@@ -316,10 +316,11 @@ private struct ScopeWindow: View {
         let count = Int(onair_fm_rds_symbols(&xy, 400))
         guard count > 0 else { return }
         let largest = max((0..<count * 2).map { abs(xy[$0]) }.max() ?? 1, 0.001)
-        let radius = size.height * 0.42
+        // the strongest symbol reaches just inside the edge, whatever shape the window is
+        let reachX = size.width / 2 - 5, reachY = size.height / 2 - 5
         for i in 0..<count {
-            let x = size.width / 2 + CGFloat(xy[i * 2] / largest) * radius * 1.6
-            let y = size.height / 2 - CGFloat(xy[i * 2 + 1] / largest) * radius
+            let x = size.width / 2 + CGFloat(xy[i * 2] / largest) * reachX
+            let y = size.height / 2 - CGFloat(xy[i * 2 + 1] / largest) * reachY
             context.fill(Path(ellipseIn: CGRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3)), with: .color(Color(red: 0.55, green: 1, blue: 0.6)))
         }
     }

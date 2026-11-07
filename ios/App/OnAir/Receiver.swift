@@ -57,6 +57,7 @@ final class Receiver {
 
     /// The ends of the spectrum: enough digits to tell them apart at this zoom.
     static func axisText(hz: Double, spanHz: Double) -> String {
+        let hz = max(hz, 0)   // tuned this low, the capture reaches past zero
         if hz < 1e6 { return String(format: spanHz < 2000 ? "%.3f" : "%.1f", hz / 1e3) + " k" }
         return String(format: spanHz < 2000 ? "%.6f" : spanHz < 200_000 ? "%.4f" : "%.3f", hz / 1e6)
     }
