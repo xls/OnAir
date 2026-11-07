@@ -70,13 +70,16 @@ struct ModeBrowser: View {
             list
                 .onAppear {
                     guard query.isEmpty, let current = Self.rows.first(where: { onair_mode_is_selected($0.id) }) else { return }
-                    DispatchQueue.main.async { scroller.scrollTo(current.id, anchor: .center) }  // once it is laid out
+                    DispatchQueue.main.async {   // once it is laid out: the group first, since its rows do not exist until it is near
+                        scroller.scrollTo(current.group, anchor: .top)
+                        DispatchQueue.main.async { scroller.scrollTo(current.id, anchor: .center) }
+                    }
                 }
         }
     }
 
     private var list: some View {
-        PanelPage {
+        PanelPage(lazy: true) {
             GlassWindow(corner: 6) {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(RadioTheme.amber)

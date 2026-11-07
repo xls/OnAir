@@ -25,6 +25,7 @@
 #include "dect2/net/netradio.h"
 #include "dect2/engine/rate_choice.h"
 #include "dect2/general/general_rx.h"
+#include "imgui_reflect.h"
 #include "dect2/net/remote_api.h"
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
@@ -140,8 +141,33 @@ void feedFingers() {   // touch::feedPointer wants every finger, every frame, be
     for (const Finger& f : gFingers) touch::feedPointer(f.id, f.x, f.y, true);
 }
 
+// The current mode's panels, read for the native drawers: see imgui_reflect.h
+bool gOptionsWanted = false;
+std::string gOptions = "[]";
+int gOptionsCountdown = 0;
+void readOptions(App& a) {
+    if (!gOptionsWanted || (--gOptionsCountdown > 0 && !reflect::editPending())) return;
+    gOptionsCountdown = 3;
+    reflect::begin();
+    bool retune = false;
+    if (const ModeUi* m = modeUi(a.family)) {
+        ImGui::PushID("drawer");
+        if (m->tuner) { reflect::section("Tuning"); m->tuner(a, retune); }
+        if (m->decoder) { reflect::section("Decoder"); m->decoder(a, retune); }
+        if (m->command) { reflect::section("Options"); m->command(a); }
+        else if (m->tab) { reflect::section("Options"); m->tab(a); }
+        ImGui::PopID();
+    } else {   // the TV modes: their tuner and decoder are in the top bar's pieces
+        reflect::section("Tuning");
+        toolbarParts(a, TbTuner | TbDecoder, true);
+    }
+    gOptions = reflect::end();
+    if (retune) retuneIfRunning(a);
+}
+
 // The pages drawn in the body of the touch shell; the SwiftUI bar replaces its top bar and dock. All of them draw into the current window.
 void pageBody(App& a, ImVec2) {
+    readOptions(a);
     switch (gPage) {
     case ONAIR_PAGE_RECEIVER: overviewTab(a); break;
     case ONAIR_PAGE_TUNER:
@@ -447,6 +473,10 @@ void onair_tv_play_file(const char* path) {
     }).detach();
 }
 
+void onair_options_watch(bool on) { gOptionsWanted = on; gOptionsCountdown = 0; }
+const char* onair_options_json(void) { return gOptions.c_str(); }
+void onair_option_set(unsigned id, const char* value) { reflect::edit(id, value); }
+
 const char* onair_auto_message(void) {
     static std::string held;
     held = autodetMessage(appRunApp());
@@ -592,6 +622,24 @@ const char* onair_general_json(void) {
 }
 
 void onair_general_set(int demod, double widthHz) { generalSetDemodWidth(demod, widthHz); }
+
+// What the receiver listens to, in absolute Hz: the audio filter of the listening modes, else the mode's channel around the tuned frequency
+bool onair_filter_band(double* lowHz, double* highHz) {
+    App& a = appRunApp();
+    if (a.family == 55 || a.family == 212) {
+        double lo = 0, hi = 0;
+        dect2::generalFilterEdges(generalCurrentDemod(), generalCurrentWidth(), lo, hi);
+        const double dial = generalListenHz(a);
+        *lowHz = dial + lo;
+        *highHz = dial + hi;
+        return true;
+    }
+    const double width = a.tune.channelBwMhz > 0 ? a.tune.channelBwMhz : a.tune.bandwidthMhz;
+    if (width <= 0) return false;
+    *lowHz = (a.freqMhz - width / 2) * 1e6;
+    *highHz = (a.freqMhz + width / 2) * 1e6;
+    return true;
+}
 
 // The radio's sample rate for this mode, as the desktop's RATE box: Auto is the mode's own rate
 const char* onair_rate_json(void) {

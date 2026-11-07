@@ -1,0 +1,333 @@
+#include "imgui_reflect.h"
+#include "dect2/net/remote_api.h"
+#include "imgui.h"
+#include "imgui_internal.h"
+#include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <set>
+#include <string>
+#include <vector>
+
+// the real widgets, renamed where they are compiled
+namespace ImGui {
+bool Orig_Checkbox(const char*, bool*);
+bool Orig_BeginCombo(const char*, const char*, ImGuiComboFlags);
+void Orig_EndCombo();
+bool Orig_Combo(const char*, int*, const char* const[], int, int);
+bool Orig_Combo(const char*, int*, const char*, int);
+bool Orig_Combo(const char*, int*, const char* (*)(void*, int), void*, int, int);
+bool Orig_Selectable(const char*, bool, ImGuiSelectableFlags, const ImVec2&);
+bool Orig_Selectable(const char*, bool*, ImGuiSelectableFlags, const ImVec2&);
+bool Orig_SliderFloat(const char*, float*, float, float, const char*, ImGuiSliderFlags);
+bool Orig_SliderInt(const char*, int*, int, int, const char*, ImGuiSliderFlags);
+bool Orig_InputDouble(const char*, double*, double, double, const char*, ImGuiInputTextFlags);
+bool Orig_InputFloat(const char*, float*, float, float, const char*, ImGuiInputTextFlags);
+bool Orig_InputInt(const char*, int*, int, int, ImGuiInputTextFlags);
+bool Orig_InputText(const char*, char*, size_t, ImGuiInputTextFlags, ImGuiInputTextCallback, void*);
+bool Orig_InputTextWithHint(const char*, const char*, char*, size_t, ImGuiInputTextFlags, ImGuiInputTextCallback, void*);
+bool Orig_RadioButton(const char*, bool);
+bool Orig_RadioButton(const char*, int*, int);
+bool Orig_Button(const char*, const ImVec2&);
+bool Orig_SmallButton(const char*);
+bool Orig_CollapsingHeader(const char*, ImGuiTreeNodeFlags);
+bool Orig_CollapsingHeader(const char*, bool*, ImGuiTreeNodeFlags);
+void Orig_TextUnformatted(const char*, const char*);
+bool Orig_BeginTabBar(const char*, ImGuiTabBarFlags);
+void Orig_EndTabBar();
+bool Orig_BeginTabItem(const char*, bool*, ImGuiTabItemFlags);
+void Orig_EndTabItem();
+bool Orig_IsItemHovered(ImGuiHoveredFlags);
+bool Orig_BeginTooltip();
+void Orig_EndTooltip();
+void Orig_SetTooltipV(const char*, va_list);
+bool Orig_BeginItemTooltip();
+void Orig_SetItemTooltipV(const char*, va_list);
+}
+
+namespace {
+struct Item {
+    unsigned id = 0;
+    std::string kind, label, section, value, help;
+    bool guessed = false;   // the label is only the text that stood before it
+    double lo = 0, hi = 0;
+    std::vector<std::string> options;
+    bool disabled = false;
+};
+
+bool gOn = false, gHasEdit = false;
+unsigned gEditId = 0;
+std::string gEditValue, gSection, gLastText;
+std::vector<Item> gItems;
+std::set<unsigned> gSeen;
+Item* gCombo = nullptr;
+int gOption = 0;
+bool gOptionHit = false;
+bool gInTooltip = false;
+
+std::string visible(const char* label) {   // the part of a label ImGui shows
+    std::string s = label ? label : "";
+    const size_t cut = s.find("##");
+    if (cut != std::string::npos) s.resize(cut);
+    while (!s.empty() && (s.back() == ' ' || s.back() == ':')) s.pop_back();
+    return s;
+}
+
+Item* add(const char* kind, const char* label) {
+    const unsigned id = ImGui::GetID(label);
+    if (!gSeen.insert(id).second) return nullptr;
+    Item it;
+    it.id = id;
+    it.kind = kind;
+    it.label = visible(label);
+    if (it.label.empty()) { it.label = gLastText; it.guessed = true; }
+    it.section = gSection;
+    it.disabled = (GImGui->CurrentItemFlags & ImGuiItemFlags_Disabled) != 0;
+    gItems.push_back(std::move(it));
+    gLastText.clear();
+    return &gItems.back();
+}
+
+bool edited(const char* label) { return gHasEdit && ImGui::GetID(label) == gEditId; }
+std::string num(double v) { char b[40]; snprintf(b, sizeof b, "%.10g", v); return b; }
+
+template <class T> bool number(const char* kind, const char* label, T* v, double lo, double hi) {
+    const bool hit = edited(label);
+    if (hit) *v = (T)atof(gEditValue.c_str());
+    if (Item* it = add(kind, label)) { it->value = num((double)*v); it->lo = lo; it->hi = hi; }
+    return hit;
+}
+
+bool textField(const char* label, char* buf, size_t size) {
+    const bool hit = edited(label);
+    if (hit) snprintf(buf, size, "%s", gEditValue.c_str());
+    if (Item* it = add("text", label)) it->value = buf;
+    return hit;
+}
+
+bool choice(const char* label, int* current, int count, const std::vector<std::string>& names) {
+    const bool hit = edited(label);
+    if (hit) *current = atoi(gEditValue.c_str());
+    if (Item* it = add("choice", label)) { it->value = std::to_string(*current); it->options = names; }
+    (void)count;
+    return hit;
+}
+}   // namespace
+
+static std::string shortHelp(const std::string& help) {   // a name for a control that has only a tooltip
+    size_t cut = help.find_first_of(".:,(;\n");
+    if (cut == std::string::npos || cut > 40) cut = std::min<size_t>(help.size(), 40);
+    return help.substr(0, cut);
+}
+
+namespace reflect {
+void begin() { gOn = true; gItems.clear(); gSeen.clear(); gSection.clear(); gLastText.clear(); gCombo = nullptr; }
+void section(const char* title) { gSection = title; }
+void edit(unsigned id, const std::string& value) { gEditId = id; gEditValue = value; gHasEdit = true; }
+bool editPending() { return gHasEdit; }
+
+std::string end() {
+    gOn = false;
+    gHasEdit = false;
+    std::string j = "[";
+    for (Item& it : gItems) {
+        const bool readout = it.guessed && it.label.find_first_of("0123456789") != std::string::npos;
+        if ((it.label.empty() || readout) && !it.help.empty()) it.label = shortHelp(it.help);
+        if (j.size() > 1) j += ",";
+        j += "{\"id\":" + std::to_string(it.id) + ",\"kind\":\"" + it.kind + "\",\"label\":\"" + dect2::jsonEscape(it.label) + "\",\"section\":\"" + dect2::jsonEscape(it.section) +
+             "\",\"help\":\"" + dect2::jsonEscape(it.help) + "\",\"value\":\"" + dect2::jsonEscape(it.value) + "\",\"lo\":" + num(it.lo) + ",\"hi\":" + num(it.hi) + ",\"disabled\":" + (it.disabled ? "true" : "false") + ",\"options\":[";
+        for (size_t i = 0; i < it.options.size(); i++) j += std::string(i ? "," : "") + "\"" + dect2::jsonEscape(it.options[i]) + "\"";
+        j += "]}";
+    }
+    return j + "]";
+}
+}   // namespace reflect
+
+namespace ImGui {
+bool Checkbox(const char* label, bool* v) {
+    if (!gOn) return Orig_Checkbox(label, v);
+    const bool hit = edited(label);
+    if (hit) *v = gEditValue == "1";
+    if (Item* it = add("toggle", label)) it->value = *v ? "1" : "0";
+    return hit;
+}
+
+bool BeginCombo(const char* label, const char* preview, ImGuiComboFlags flags) {
+    if (!gOn) return Orig_BeginCombo(label, preview, flags);
+    gCombo = add("choice", label);
+    gOption = 0;
+    gOptionHit = false;
+    if (gCombo) gCombo->value = "-1";
+    PushID(label);   // what the panel's Selectable lines and PushIDs see stays the same at every pass
+    return gCombo != nullptr;
+}
+
+void EndCombo() {
+    if (!gOn) { Orig_EndCombo(); return; }
+    PopID();
+    gCombo = nullptr;
+}
+
+bool Combo(const char* label, int* current, const char* const items[], int count, int popup) {
+    if (!gOn) return Orig_Combo(label, current, items, count, popup);
+    std::vector<std::string> names;
+    for (int i = 0; i < count; i++) names.push_back(items[i] ? visible(items[i]) : "");
+    return choice(label, current, count, names);
+}
+
+bool Combo(const char* label, int* current, const char* zeroSeparated, int popup) {
+    if (!gOn) return Orig_Combo(label, current, zeroSeparated, popup);
+    std::vector<std::string> names;
+    for (const char* p = zeroSeparated; *p; p += strlen(p) + 1) names.push_back(p);
+    return choice(label, current, (int)names.size(), names);
+}
+
+bool Combo(const char* label, int* current, const char* (*getter)(void*, int), void* data, int count, int popup) {
+    if (!gOn) return Orig_Combo(label, current, getter, data, count, popup);
+    std::vector<std::string> names;
+    for (int i = 0; i < count; i++) { const char* n = getter(data, i); names.push_back(n ? n : ""); }
+    return choice(label, current, count, names);
+}
+
+static bool option(const char* label, bool selected) {
+    if (!gCombo) return false;
+    const int index = gOption++;
+    gCombo->options.push_back(visible(label));
+    if (selected) gCombo->value = std::to_string(index);
+    return gHasEdit && gCombo->id == gEditId && atoi(gEditValue.c_str()) == index;
+}
+
+bool Selectable(const char* label, bool selected, ImGuiSelectableFlags flags, const ImVec2& size) {
+    return gOn ? option(label, selected) : Orig_Selectable(label, selected, flags, size);
+}
+
+bool Selectable(const char* label, bool* selected, ImGuiSelectableFlags flags, const ImVec2& size) {
+    if (!gOn) return Orig_Selectable(label, selected, flags, size);
+    const bool hit = option(label, selected && *selected);
+    if (hit && selected) *selected = true;
+    return hit;
+}
+
+bool SliderFloat(const char* label, float* v, float lo, float hi, const char* format, ImGuiSliderFlags flags) {
+    return gOn ? number("slider", label, v, lo, hi) : Orig_SliderFloat(label, v, lo, hi, format, flags);
+}
+bool SliderInt(const char* label, int* v, int lo, int hi, const char* format, ImGuiSliderFlags flags) {
+    return gOn ? number("slider", label, v, lo, hi) : Orig_SliderInt(label, v, lo, hi, format, flags);
+}
+bool InputDouble(const char* label, double* v, double step, double fast, const char* format, ImGuiInputTextFlags flags) {
+    return gOn ? number("number", label, v, 0, 0) : Orig_InputDouble(label, v, step, fast, format, flags);
+}
+bool InputFloat(const char* label, float* v, float step, float fast, const char* format, ImGuiInputTextFlags flags) {
+    return gOn ? number("number", label, v, 0, 0) : Orig_InputFloat(label, v, step, fast, format, flags);
+}
+bool InputInt(const char* label, int* v, int step, int fast, ImGuiInputTextFlags flags) {
+    return gOn ? number("number", label, v, 0, 0) : Orig_InputInt(label, v, step, fast, flags);
+}
+bool InputText(const char* label, char* buf, size_t size, ImGuiInputTextFlags flags, ImGuiInputTextCallback cb, void* user) {
+    return gOn ? textField(label, buf, size) : Orig_InputText(label, buf, size, flags, cb, user);
+}
+bool InputTextWithHint(const char* label, const char* hint, char* buf, size_t size, ImGuiInputTextFlags flags, ImGuiInputTextCallback cb, void* user) {
+    return gOn ? textField(label, buf, size) : Orig_InputTextWithHint(label, hint, buf, size, flags, cb, user);
+}
+
+bool RadioButton(const char* label, bool active) {
+    if (!gOn) return Orig_RadioButton(label, active);
+    const bool hit = edited(label);
+    if (Item* it = add("radio", label)) it->value = active ? "1" : "0";
+    return hit;
+}
+bool RadioButton(const char* label, int* v, int button) {
+    if (!gOn) return Orig_RadioButton(label, v, button);
+    const bool hit = edited(label);
+    if (hit) *v = button;
+    if (Item* it = add("radio", label)) it->value = *v == button ? "1" : "0";
+    return hit;
+}
+
+bool Button(const char* label, const ImVec2& size) {
+    if (!gOn) return Orig_Button(label, size);
+    const bool hit = edited(label);
+    add("button", label);
+    return hit;
+}
+bool SmallButton(const char* label) {
+    if (!gOn) return Orig_SmallButton(label);
+    const bool hit = edited(label);
+    add("button", label);
+    return hit;
+}
+
+bool CollapsingHeader(const char* label, ImGuiTreeNodeFlags flags) {
+    if (!gOn) return Orig_CollapsingHeader(label, flags);
+    gSection = visible(label);
+    return true;
+}
+bool CollapsingHeader(const char* label, bool* visibleFlag, ImGuiTreeNodeFlags flags) {
+    if (!gOn) return Orig_CollapsingHeader(label, visibleFlag, flags);
+    gSection = visible(label);
+    return true;
+}
+
+// what stands beside a control with no label of its own
+static void remember(const char* text, const char* end = nullptr) {
+    if (!gOn) return;
+    const std::string t = end ? std::string(text, end) : std::string(text);
+    if (gInTooltip) {
+        if (!gItems.empty() && gItems.back().help.size() < 240) gItems.back().help += (gItems.back().help.empty() ? "" : " ") + t;
+        return;
+    }
+    if (!gItems.empty() && gItems.back().label.empty()) gItems.back().label = t.substr(0, 40);   // a list row: its name comes after the box
+    gLastText = t.substr(0, 60);
+}
+
+static void tooltip(const char* fmt, va_list args) {
+    char b[300];
+    vsnprintf(b, sizeof b, fmt, args);
+    const bool was = gInTooltip;
+    gInTooltip = true;
+    remember(b);
+    gInTooltip = was;
+}
+
+bool IsItemHovered(ImGuiHoveredFlags flags) { return gOn ? true : Orig_IsItemHovered(flags); }   // so the panel says what the control is for
+bool BeginTooltip() { if (!gOn) return Orig_BeginTooltip(); gInTooltip = true; return true; }
+void EndTooltip() { if (!gOn) { Orig_EndTooltip(); return; } gInTooltip = false; }
+bool BeginItemTooltip() { if (!gOn) return Orig_BeginItemTooltip(); gInTooltip = true; return true; }
+void SetTooltipV(const char* fmt, va_list args) { if (gOn) tooltip(fmt, args); else Orig_SetTooltipV(fmt, args); }
+void SetItemTooltipV(const char* fmt, va_list args) { if (gOn) tooltip(fmt, args); else Orig_SetItemTooltipV(fmt, args); }
+void SetTooltip(const char* fmt, ...) { va_list args; va_start(args, fmt); SetTooltipV(fmt, args); va_end(args); }
+void SetItemTooltip(const char* fmt, ...) { va_list args; va_start(args, fmt); SetItemTooltipV(fmt, args); va_end(args); }
+
+bool BeginTabBar(const char* id, ImGuiTabBarFlags flags) { return gOn ? true : Orig_BeginTabBar(id, flags); }
+void EndTabBar() { if (!gOn) Orig_EndTabBar(); }
+bool BeginTabItem(const char* label, bool* open, ImGuiTabItemFlags flags) {
+    if (!gOn) return Orig_BeginTabItem(label, open, flags);
+    gSection = visible(label);
+    PushID(label);
+    return true;
+}
+void EndTabItem() { if (gOn) PopID(); else Orig_EndTabItem(); }
+
+void TextUnformatted(const char* text, const char* end) { remember(text, end); Orig_TextUnformatted(text, end); }
+void Text(const char* fmt, ...) {
+    va_list args; va_start(args, fmt); char b[256]; vsnprintf(b, sizeof b, fmt, args); va_end(args);
+    remember(b); Orig_TextUnformatted(b, nullptr);
+}
+void TextDisabled(const char* fmt, ...) {
+    va_list args; va_start(args, fmt); char b[256]; vsnprintf(b, sizeof b, fmt, args); va_end(args);
+    remember(b);
+    va_start(args, fmt); TextDisabledV(fmt, args); va_end(args);
+}
+void TextColored(const ImVec4& col, const char* fmt, ...) {
+    va_list args; va_start(args, fmt); char b[256]; vsnprintf(b, sizeof b, fmt, args); va_end(args);
+    remember(b);
+    va_start(args, fmt); TextColoredV(col, fmt, args); va_end(args);
+}
+void TextWrapped(const char* fmt, ...) {
+    va_list args; va_start(args, fmt); char b[256]; vsnprintf(b, sizeof b, fmt, args); va_end(args);
+    remember(b);
+    va_start(args, fmt); TextWrappedV(fmt, args); va_end(args);
+}
+}   // namespace ImGui

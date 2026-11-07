@@ -93,6 +93,7 @@ struct HamPage: View {
             VStack(spacing: 6) {
                 GlassWindow(corner: 6) {
                     SpectrumMetalView(renderer: spectrum)
+                        .overlay { FilterBox(receiver: receiver, spectrum: spectrum) }
                 }
                 .frame(height: isVoice ? 84 : 110)
                 vfo
@@ -106,6 +107,7 @@ struct HamPage: View {
                                 tuning
                                 decoderKeys
                                 decodedText
+                                Color.clear.frame(height: 24)   // clear of the settings tab
                             } else {
                                 bands
                                 modes
@@ -255,8 +257,8 @@ struct HamPage: View {
     }
 
     private var shortwaveDemods: some View {
-        LazyVGrid(columns: keyGrid(4), spacing: 4) {
-            ForEach([VoiceMode.am, .usb, .lsb, .cw]) { mode in
+        LazyVGrid(columns: keyGrid(5), spacing: 4) {
+            ForEach([VoiceMode.am, .usb, .lsb, .cw, .fm]) { mode in
                 HardwareKey(lit: Int32(general.demod) == mode.demod, led: .green, action: { select(voice: mode) }) {
                     EngravedLabel(text: mode.rawValue, size: 9)
                 }
@@ -361,6 +363,8 @@ struct HamPage: View {
                 receiver.refresh()
             }
             .frame(width: 96, height: 96)
+            .padding(.trailing, 10)   // its ring and shadow stand outside the frame; the scroll view would cut them
+            .padding(.vertical, 8)
         }
     }
 

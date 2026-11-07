@@ -124,6 +124,10 @@ void onair_sw_press(int id);                                       // start or s
 void onair_sw_auto(bool on);
 void onair_sw_stop_all(void);
 void onair_sw_tune_khz(double khz);
+void onair_options_watch(bool on);                                 // keep reading the current mode's settings
+const char* onair_options_json(void);                              // [{id, kind, label, section, value, lo, hi, options, disabled}]
+void onair_option_set(unsigned id, const char* value);
+bool onair_filter_band(double* lowHz, double* highHz);             // what is being listened to, for the box on the spectrum
 const char* onair_auto_message(void);                              // what TV (auto) or Digital voice (auto) is doing, empty when neither runs
 void onair_tv_play_file(const char* path);                        // a recorded .ts through the demux and the player, at its own pace
 void onair_tv_bandwidth(double mhz);                             // 6, 7 or 8; 0 automatic

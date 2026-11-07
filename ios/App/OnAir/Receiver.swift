@@ -27,13 +27,18 @@ final class Receiver {
 
     private(set) var status = Status()
     private(set) var rate = Rate()
+    private(set) var filterBand: ClosedRange<Double>?
     private(set) var devices: [String] = []
     var videoFullscreen = false
+    var pageHidden = false   // a full-height sheet covers the page: it stops drawing, so the sheet scrolls smoothly. Sound and decoding go on
 
     func refresh() {
         guard let text = onair_status_json() else { return }
         if let new = try? JSONDecoder().decode(Status.self, from: Data(String(cString: text).utf8)) { status = new }
         if let text = onair_rate_json(), let new = try? JSONDecoder().decode(Rate.self, from: Data(String(cString: text).utf8)), new != rate { rate = new }
+        var low = 0.0, high = 0.0
+        let band = onair_filter_band(&low, &high) && high > low ? low...high : nil
+        if band != filterBand { filterBand = band }
         let names = (0..<onair_device_count()).map { String(cString: onair_device_name($0)) }
         if names != devices { devices = names }
     }

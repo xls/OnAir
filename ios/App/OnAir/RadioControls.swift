@@ -207,18 +207,41 @@ struct HardwareKey<Label: View>: View {
     var hold: (() -> Void)?
     let action: () -> Void
     @ViewBuilder let label: Label
-    @State private var pressed = false
-    @State private var holdTimer: DispatchWorkItem?
     @State private var held = false
 
     var body: some View {
-        VStack(spacing: 4) {
+        // a real button: a drag that starts on a key scrolls the page
+        Button {
+            if held { held = false } else { action() }
+        } label: {
+            label
+        }
+        .buttonStyle(HardwareKeyFace(lit: lit, led: led))
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.6).onEnded { _ in
+                guard let hold else { return }
+                held = true
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                hold()
+            },
+            including: hold == nil ? .subviews : .all
+        )
+    }
+}
+
+private struct HardwareKeyFace: ButtonStyle {
+    let lit: Bool
+    let led: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        return VStack(spacing: 4) {
             Capsule()
                 .fill(lit ? led : Color(white: 0.11))
                 .frame(width: 18, height: 3)
                 .shadow(color: lit ? led : .clear, radius: 5)
                 .overlay(Capsule().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
-            label
+            configuration.label
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
@@ -236,29 +259,7 @@ struct HardwareKey<Label: View>: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.55)))
         .animation(.easeOut(duration: 0.07), value: pressed)
         .contentShape(Rectangle())
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard !pressed else { return }
-                    pressed = true
-                    held = false
-                    UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-                    guard let hold else { return }
-                    let timer = DispatchWorkItem {
-                        held = true
-                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                        hold()
-                    }
-                    holdTimer = timer
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: timer)
-                }
-                .onEnded { value in
-                    pressed = false
-                    holdTimer?.cancel()
-                    holdTimer = nil
-                    if !held, abs(value.translation.width) < 30, abs(value.translation.height) < 30 { action() }
-                }
-        )
+        .onChange(of: pressed) { if pressed { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() } }
     }
 }
 
@@ -510,15 +511,18 @@ struct SelectorWindow: View {
 
 /// A brushed plate that scrolls, for pages full of settings.
 struct PanelPage<Content: View>: View {
+    var lazy = false   // for long lists: rows are made as they come into view
     @ViewBuilder let content: Content
 
     var body: some View {
         ZStack {
             BrushedMetal(tone: 0.46)
             ScrollView {
-                VStack(spacing: 16) { content }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 14)
+                Group {
+                    if lazy { LazyVStack(spacing: 16) { content } } else { VStack(spacing: 16) { content } }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
             }
         }
     }

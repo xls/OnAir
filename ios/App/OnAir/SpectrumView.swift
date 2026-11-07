@@ -292,6 +292,7 @@ struct SpectrumPage: View {
     private func spectrumArea(width: CGFloat) -> some View {
             ZStack(alignment: .topLeading) {
                 SpectrumMetalView(renderer: spectrum)
+                FilterBox(receiver: receiver, spectrum: spectrum)
                 marker(width: width)
                 axis
                 if !receiver.status.running {
@@ -416,5 +417,28 @@ struct SpectrumPage: View {
         let span = min(max(span, 0.02), 1)
         spectrum.visibleSpan = span
         spectrum.visibleCentre = min(max(centre, span / 2), 1 - span / 2)
+    }
+}
+
+/// The band the receiver is listening to, as a yellow box on the spectrum, so a signal can be matched to the filter by eye.
+struct FilterBox: View {
+    let receiver: Receiver
+    let spectrum: SpectrumRenderer
+
+    var body: some View {
+        GeometryReader { geometry in
+            let span = spectrum.highHz - spectrum.lowHz
+            if receiver.status.running, span > 0, let band = receiver.filterBand {
+                let left = geometry.size.width * (band.lowerBound - spectrum.lowHz) / span
+                let right = geometry.size.width * (band.upperBound - spectrum.lowHz) / span
+                let width = max(right - left, 2)   // always visible, however narrow against the span
+                Rectangle()
+                    .fill(Color.yellow.opacity(0.22))
+                    .overlay(Rectangle().stroke(Color.yellow.opacity(0.75), lineWidth: 1))
+                    .frame(width: width, height: geometry.size.height)
+                    .offset(x: left)
+            }
+        }
+        .allowsHitTesting(false)
     }
 }

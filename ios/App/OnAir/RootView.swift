@@ -60,6 +60,7 @@ struct RootView: View {
     @State private var devicePage = DevicePage.source
     @State private var started = false
     @State private var autoSelected = false
+    @State private var showOptions = false
     @State private var tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -73,13 +74,19 @@ struct RootView: View {
             ZStack {
                 OnAirView().opacity(0).allowsHitTesting(false)
                 Color.black
-                nativePage
+                if !receiver.pageHidden { nativePage }
+                if started && tab != .device && tab != .settings && !receiver.videoFullscreen {
+                    DrawerHandle { showOptions = true }
+                }
             }
             if !receiver.videoFullscreen {
                 BottomBar(tab: $tab, modeName: receiver.status.mode)
             }
         }
         .background(BrushedMetal(tone: 0.46).ignoresSafeArea())
+        .sheet(isPresented: $showOptions) {
+            OptionsDrawer(mode: receiver.status.mode)
+        }
         .statusBarHidden(receiver.videoFullscreen)
         .persistentSystemOverlays(receiver.videoFullscreen ? .hidden : .automatic)
         .onReceive(tick) { _ in
@@ -178,6 +185,21 @@ struct RootView: View {
             label = name
         }
         if let path = value("--tx-file") { transmitToFile(path, mode: value("--mode") ?? "") }
+        if args.contains("--open-options") { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showOptions = true } }
+        if args.contains("--options") {
+            onair_options_watch(true)
+            if let change = value("--set-option"), let split = change.firstIndex(of: "=") {   // label=value, by the same path as a native control
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    let text = Data(String(cString: onair_options_json()).utf8)
+                    let list = (try? JSONDecoder().decode([PanelOption].self, from: text)) ?? []
+                    if let option = list.first(where: { $0.label == String(change[..<split]) }) { onair_option_set(option.id, String(change[change.index(after: split)...])) }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("options.json")
+                try? String(cString: onair_options_json()).write(to: file, atomically: true, encoding: .utf8)
+            }
+        }
         if !label.isEmpty {
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
                 MainActor.assumeIsolated {
@@ -366,6 +388,8 @@ struct StatusStrip: View {
                 showModes = false
                 onPickMode()
             }
+            .onAppear { receiver.pageHidden = true }
+            .onDisappear { receiver.pageHidden = false }
         }
     }
 }
