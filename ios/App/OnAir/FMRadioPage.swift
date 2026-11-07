@@ -69,18 +69,19 @@ struct FMRadioPage: View {
         GlassWindow(corner: 8) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline) {
-                    ZStack(alignment: .trailing) {   // the width of 100 MHz and up, so the digits stay put below it
+                    // the name is the headline: the frequency is already in the bar above
+                    Text(locked && !fm.station.isEmpty ? fm.station : "—")
+                        .font(.system(size: 42, weight: .light, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 6)
+                    ZStack(alignment: .trailing) {   // room for 100 MHz and up, so nothing shifts
                         Text("000.000").hidden()
                         Text(String(format: "%.3f", receiver.status.mhz))
                     }
-                    .font(.system(size: 42, weight: .light, design: .monospaced))
+                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
                     .lineLimit(1)
                     .fixedSize()
-                    Spacer(minLength: 6)
-                    Text(locked && !fm.station.isEmpty ? fm.station : "· · · · ·")
-                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
                 }
                 .frame(height: 50)
                 .foregroundStyle(RadioTheme.amber)
