@@ -23,6 +23,8 @@ final class Receiver {
         var chosen = 0.0
         var auto = 0.0
         var need = 0.0
+        var minHz = 0.0   // what the radio can tune, 0 = not known
+        var maxHz = 0.0
         var rates: [Double] = []
     }
 
@@ -44,6 +46,11 @@ final class Receiver {
     }
 
     func startStop() { onair_start_stop(); refresh() }
+    func canReach(mhz: Double) -> Bool {
+        let hz = mhz * 1e6
+        return hz >= rate.minHz && (rate.maxHz == 0 || hz <= rate.maxHz)
+    }
+
     func setRate(hz: Double) { onair_rate_set(hz); refresh() }
     func tune(mhz: Double) { onair_tune_mhz(mhz); refresh() }
     func setMuted(_ muted: Bool) { onair_set_volume(status.volume, muted); refresh() }

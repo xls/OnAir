@@ -407,6 +407,13 @@ void onair_colormap(unsigned* rgba, int n) {
     for (int i = 0; i < n; i++) rgba[i] = cmap::color(map, n > 1 ? (float)i / (float)(n - 1) : 0.f);
 }
 
+// Taller or shorter signals: the dB span of the plot, over the floor it has
+void onair_spectrum_height(double factor) {
+    App& a = appRunApp();
+    const float span = std::clamp((a.yMax - a.yMin) * (float)factor, 30.f, 160.f);
+    a.yMax = a.yMin + span;
+}
+
 void onair_spectrum_tune(double mhz) { spectrumTune(appRunApp(), mhz); }
 
 void onair_spectrum_scrub(double mhz) {
@@ -665,7 +672,7 @@ const char* onair_rate_json(void) {
     const DeviceInfo& d = a.devices[(size_t)a.devIdx];
     const bool run = a.engine.running(), usable = d.isRadio() || d.kind == DeviceInfo::Synthetic;
     json = "{\"usable\":" + std::string(usable ? "true" : "false") + ",\"now\":" + textOf(run ? a.engine.radioRate() : a.chosenRateHz > 0 ? a.chosenRateHz : a.tune.sampleRate) +
-           ",\"chosen\":" + textOf(a.chosenRateHz) + ",\"auto\":" + textOf(a.autoRateHz > 0 ? a.autoRateHz : a.tune.sampleRate) + ",\"need\":" + textOf(modeMinSampleRate(a)) + ",\"rates\":[";
+           ",\"chosen\":" + textOf(a.chosenRateHz) + ",\"auto\":" + textOf(a.autoRateHz > 0 ? a.autoRateHz : a.tune.sampleRate) + ",\"need\":" + textOf(modeMinSampleRate(a)) + ",\"minHz\":" + textOf(d.isRadio() ? std::max(d.minFreqHz, d.board == "pluto" ? 70e6 : 0.0) : 0.0) + ",\"maxHz\":" + textOf(d.isRadio() ? d.maxFreqHz : 0.0) + ",\"rates\":[";
     bool first = true;
     if (usable) for (const dect2::RateEntry& e : dect2::rateEntries(dect2::rateLimitsOf(d), 0)) {
         json += (first ? "" : ",") + textOf(e.getHz);

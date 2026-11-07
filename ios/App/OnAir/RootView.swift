@@ -180,6 +180,7 @@ struct RootView: View {
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--fake-guide") { onair_fake_guide() }
+        if let factor = value("--spec-height").flatMap(Double.init) { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { onair_spectrum_height(factor) } }
         if args.contains("--agc") { onair_agc_set(true) }
         if let demod = value("--demod").flatMap(Int32.init) { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { onair_general_set(demod, 0) } }
         if let id = value("--sw-press").flatMap(Int32.init) { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { onair_sw_press(id) } }

@@ -185,9 +185,9 @@ struct SpectrumMetalView: UIViewRepresentable {
 }
 
 /// Reads the finger gestures. UIKit is used here because it can tell one finger from two. Two fingers either pan or zoom, whichever their
-/// first movement shows; after that the gesture stays that kind until the fingers lift.
+/// first movement shows; after that the gesture stays that kind until the fingers lift. Up and down changes the height of the signals.
 private struct SpectrumGestures: UIViewRepresentable {
-    enum TwoFingers { case undecided, pan, zoom }
+    enum TwoFingers { case undecided, pan, zoom, height }
 
     let tap: (CGFloat) -> Void
     let scrub: (CGFloat, Bool) -> Void              // one finger: points from the start, finished
@@ -218,6 +218,7 @@ private struct SpectrumGestures: UIViewRepresentable {
     @MainActor final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var parent: SpectrumGestures?
         private var lastPan: CGFloat = 0
+        private var lastHeight: CGFloat = 0
         private var mode = TwoFingers.undecided
         private var scale = 1.0
 
@@ -230,14 +231,17 @@ private struct SpectrumGestures: UIViewRepresentable {
         }
 
         @objc func twoPanned(_ r: UIPanGestureRecognizer) {
-            let x = r.translation(in: r.view).x
+            let x = r.translation(in: r.view).x, y = r.translation(in: r.view).y
             let done = r.state == .ended || r.state == .cancelled
-            if mode == .undecided, abs(x) > 14 {
-                mode = .pan
+            if mode == .undecided, abs(x) > 14 || abs(y) > 14 {
+                mode = abs(y) > abs(x) ? .height : .pan
                 lastPan = x   // the view starts moving here, without a jump
+                lastHeight = y
             }
             if mode == .pan { parent?.pan(x - lastPan, done) }
+            if mode == .height { onair_spectrum_height(exp(Double(y - lastHeight) / 180)) }   // up: taller signals
             lastPan = x
+            lastHeight = y
             if done { finish() }
         }
 
@@ -252,6 +256,7 @@ private struct SpectrumGestures: UIViewRepresentable {
         private func finish() {
             mode = .undecided
             lastPan = 0
+            lastHeight = 0
             scale = 1
         }
     }
