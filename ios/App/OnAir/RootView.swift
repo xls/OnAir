@@ -164,6 +164,11 @@ struct RootView: View {
 
     private func applyTestArguments() {
         let args = ProcessInfo.processInfo.arguments
+        if args.contains("--who") {
+            Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+                MainActor.assumeIsolated { NSLog("OnAirWho selected=%d devices=%@ status=%@", onair_device_selected(), receiver.devices.description, receiver.status.source) }
+            }
+        }
         func value(_ name: String) -> String? {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]

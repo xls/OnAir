@@ -47,6 +47,7 @@ struct SourcePage: View {
         }
         .onAppear(perform: loadAntenna)
         .onChange(of: receiver.status.source) { loadAntenna() }
+        .onChange(of: receiver.devices) { loadAntenna() }
     }
 
     private struct Setting: Decodable {
