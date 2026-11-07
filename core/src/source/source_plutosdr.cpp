@@ -280,11 +280,16 @@ protected:
         phy_ = radio_->phy;
         rx_ = iio().context_find_device(ctx_, "cf-ad9361-lpc");
         if (!phy_ || !rx_) { err = "PlutoSDR: the AD9361 devices were not found"; return false; }
-        rxCh_ = iio().device_find_channel(phy_, "voltage0", false);
+        // the second receiver of a 2R image (ANTSDR E310, Pluto+): its own gain channel and the next I/Q pair of the converter; they share the LO
+        const bool second = radioOption(s, "antenna", "rx1") == "rx2";
+        rxCh_ = iio().device_find_channel(phy_, second ? "voltage1" : "voltage0", false);
         lo_ = iio().device_find_channel(phy_, "altvoltage0", true);
-        i_ = iio().device_find_channel(rx_, "voltage0", false);
-        q_ = iio().device_find_channel(rx_, "voltage1", false);
+        i_ = iio().device_find_channel(rx_, second ? "voltage2" : "voltage0", false);
+        q_ = iio().device_find_channel(rx_, second ? "voltage3" : "voltage1", false);
+        if (second && (!i_ || !q_)) { err = "PlutoSDR: this radio has one receiver: choose RX1"; openFailure_ = OpenFailure::Final; return false; }
         if (!rxCh_ || !lo_ || !i_ || !q_) { err = "PlutoSDR: the receive channels were not found"; return false; }
+        for (const char* other : {second ? "voltage0" : "voltage2", second ? "voltage1" : "voltage3"})   // the context is shared and remembers what was enabled
+            if (IioApi::iio_channel* c = iio().device_find_channel(rx_, other, false)) iio().channel_disable(c);
         gainMode_.clear();
         fw_.clear(); tezuka_ = false;
         if (iio().context_get_attr_value) {
@@ -690,7 +695,10 @@ DeviceInfo plutoEntry(const std::string& uri, const std::string& desc, bool prob
                   choiceSetting("gainmode", "Gain mode",
                                 "Manual: the gain slider (and OnAir's AGC) set the AD9361's gain (the default).\n"
                                 "Slow / fast attack: the AD9361's own AGC sets it (fast attack for bursts); the gain slider then has no effect.",
-                                {"manual", "slow_attack", "fast_attack"}, {"Manual", "Radio AGC, slow attack", "Radio AGC, fast attack"}, "manual")};
+                                {"manual", "slow_attack", "fast_attack"}, {"Manual", "Radio AGC, slow attack", "Radio AGC, fast attack"}, "manual"),
+                  choiceSetting("antenna", "Antenna",
+                                "Which receiver to use. RX2 needs a radio with two receivers (ANTSDR E310, Pluto+ with the 2R image).",
+                                {"rx1", "rx2"}, {"RX1", "RX2"}, "rx1", true)};
     bool tez = false, known = false;
     {
         std::lock_guard<std::mutex> lk(gRangeMu);

@@ -955,8 +955,11 @@ const char* onair_verify_line(void) {
     snprintf(head, sizeof head, " running=%d std=%d audioSec=%.1f videoFrames=%llu services=%zu tsPackets=%llu rate=%.2f json=", a.engine.running() ? 1 : 0, a.rx.standard,
              dect2::audioIosPlayedFrames() / 48000.0, (unsigned long long)gVideoFrames, a.ts.services.size(), (unsigned long long)a.ts.totalPackets, a.engine.sampleRate() / 1e6);
     const dect2::SampleLoss loss = a.engine.sampleLoss();
-    char lossText[160];
-    snprintf(lossText, sizeof lossText, " delivered=%.1f load=%.0f radioLost=%.1f cpuLost=%.1f", loss.deliveredPct, loss.loadPct, loss.radioSec, loss.cpuSec);
+    char lossText[240];
+    static float tap[4096];
+    dect2::audioIosRecent(tap, 2048);
+    auto rms = [&](int frames) { double t = 0; for (int i = 4096 - frames * 2; i < 4096; i++) t += tap[i] * tap[i]; return sqrt(t / (frames * 2)); };
+    snprintf(lossText, sizeof lossText, " delivered=%.1f load=%.0f radioLost=%.1f cpuLost=%.1f tap256=%.4f tap1024=%.4f tap2048=%.4f vol=%.2f muted=%d", loss.deliveredPct, loss.loadPct, loss.radioSec, loss.cpuSec, rms(256), rms(1024), rms(2048), a.volume, a.muted ? 1 : 0);
     gJson = head + std::string(lossText) + " [" + gVideoStatus + "] " + json.substr(0, 900);
     return gJson.c_str();
 }

@@ -180,6 +180,11 @@ struct RootView: View {
         if let gain = value("--gain"), let db = Double(gain) { onair_gain_set(db) }
         if let frequency = value("--freq"), let mhz = Double(frequency) { onair_tune_mhz(mhz) }
         if args.contains("--fake-guide") { onair_fake_guide() }
+        if let antenna = value("--antenna") { onair_radio_setting_set("antenna", antenna) }
+        if args.contains("--scopes") {
+            UserDefaults.standard.set("L / R", forKey: "scopeLeft")
+            UserDefaults.standard.set("SCOPE", forKey: "scopeRight")
+        }
         if args.contains("--agc") { onair_agc_set(true) }
         if let demod = value("--demod").flatMap(Int32.init) { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { onair_general_set(demod, 0) } }
         if let id = value("--sw-press").flatMap(Int32.init) { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { onair_sw_press(id) } }
@@ -262,7 +267,9 @@ struct RootView: View {
         case "spectrum": tab = .spectrum
         case "mode": tab = .mode
         case "modelist": devicePage = .mode
-        default: devicePage = DevicePage.allCases.first { $0.rawValue.lowercased() == args[i + 1] } ?? .source
+        default:
+            tab = .device
+            devicePage = DevicePage.allCases.first { $0.rawValue.lowercased() == args[i + 1] } ?? .source
         }
     }
 }
