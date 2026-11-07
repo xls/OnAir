@@ -160,6 +160,7 @@ struct TVPage: View {
     @State private var autoMessage = ""
     @AppStorage("tvZoomed") private var zoomed = false
     @State private var controlsShown = true
+    @State private var lastTap = Date.distantPast
     @State private var hideTimer: DispatchWorkItem?
 
     private var playing: TVState.Service? { state.services.first { $0.id == state.selected } }
@@ -215,8 +216,7 @@ struct TVPage: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { if receiver.videoFullscreen { zoomed.toggle(); showControls() } }
-            .onTapGesture { if controlsShown && receiver.videoFullscreen { hideControls() } else { showControls() } }
+            .onTapGesture { tapped() }
             .gesture(MagnificationGesture().onEnded { scale in
                 if receiver.videoFullscreen { zoomed = scale > 1 }
             })
@@ -276,6 +276,18 @@ struct TVPage: View {
         let hide = DispatchWorkItem { hideControls() }
         hideTimer = hide
         DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: hide)
+    }
+
+    /// One tap acts at once, so it has to be told from a double tap by hand: iOS would wait to see if a second one comes.
+    private func tapped() {
+        let now = Date()
+        let second = now.timeIntervalSince(lastTap) < 0.3
+        lastTap = second ? .distantPast : now
+        if second && receiver.videoFullscreen {
+            zoomed.toggle()
+            return
+        }
+        if controlsShown && receiver.videoFullscreen { hideControls() } else { showControls() }
     }
 
     private func hideControls() {
