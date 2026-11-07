@@ -176,9 +176,10 @@ private struct OptionSection: View {
                 switch part {
                 case .single(let option):
                     if option.kind == "pick" {
+                        // a scan result: its frequency, the name beside it, the rest under them
+                        let columns = option.help.components(separatedBy: " · ")
                         Button { onair_option_set(option.id, "1") } label: {
-                            PanelRow(label: option.label, help: option.help) { Image(systemName: "dot.radiowaves.right").foregroundStyle(RadioTheme.amber) }
-                                .contentShape(Rectangle())
+                            StationRow(frequency: option.label, name: columns.first ?? "", note: columns.dropFirst().joined(separator: " · "))
                         }
                         .buttonStyle(.plain)
                     } else if option.kind == "note" {
@@ -437,5 +438,27 @@ struct BearingPanel: View {
         guard let angle else { return "no clear signal" }
         if (sine.map(abs) ?? 0) > 1 { return "out of range" }
         return abs(angle) < 1 ? "ahead" : String(format: "%.0f° %@", abs(angle), angle < 0 ? "left" : "right")
+    }
+}
+
+/// One found station, in the same order everywhere: the frequency, then the name, full size.
+struct StationRow: View {
+    let frequency, name, note: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 12) {
+                Text(frequency).font(.system(size: 15, weight: .medium, design: .monospaced)).monospacedDigit()
+                Text(name).font(.system(size: 15, weight: .semibold, design: .rounded)).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(RadioTheme.amber)
+            if !note.isEmpty {
+                Text(note).font(.system(size: 10, design: .rounded)).foregroundStyle(RadioTheme.amber.opacity(0.55)).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
