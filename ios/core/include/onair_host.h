@@ -84,7 +84,6 @@ void onair_radio_setting_set(const char* key, const char* value);
 // meta: centre Hz, span Hz, spectrum min dB, spectrum max dB, waterfall min dB, waterfall max dB
 bool onair_spectrum(float* bins, int n, double* meta);
 void onair_colormap(unsigned* rgba, int n);                      // OnAir's selected waterfall colours, 0xAABBGGRR
-void onair_spectrum_height(double factor);                         // multiplies the dB span of the plot
 void onair_spectrum_tune(double mhz);                            // what a click on the desktop's spectrum does
 void onair_spectrum_scrub(double mhz);                           // an exact frequency, with no channel raster: the decoder moves, the radio only past the capture's edge
 

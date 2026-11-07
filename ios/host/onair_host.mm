@@ -407,13 +407,6 @@ void onair_colormap(unsigned* rgba, int n) {
     for (int i = 0; i < n; i++) rgba[i] = cmap::color(map, n > 1 ? (float)i / (float)(n - 1) : 0.f);
 }
 
-// Taller or shorter signals: the dB span of the plot, over the floor it has
-void onair_spectrum_height(double factor) {
-    App& a = appRunApp();
-    const float span = std::clamp((a.yMax - a.yMin) * (float)factor, 30.f, 160.f);
-    a.yMax = a.yMin + span;
-}
-
 void onair_spectrum_tune(double mhz) { spectrumTune(appRunApp(), mhz); }
 
 void onair_spectrum_scrub(double mhz) {

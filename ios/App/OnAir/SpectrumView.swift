@@ -93,6 +93,18 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
         super.init()
     }
 
+    /// The dB shown from the bottom of the plot to the top: less makes the signals taller.
+    private(set) var dbRange: Float = {
+        if let i = CommandLine.arguments.firstIndex(of: "--spec-range"), i + 1 < CommandLine.arguments.count, let value = Float(CommandLine.arguments[i + 1]) { return value }
+        let saved = UserDefaults.standard.float(forKey: "spectrumRange")
+        return saved > 0 ? saved : 80
+    }()
+
+    func scaleHeight(by factor: Float, done: Bool) {
+        dbRange = min(max(dbRange * factor, 20), 160)
+        if done { UserDefaults.standard.set(dbRange, forKey: "spectrumRange") }
+    }
+
     func refreshColours() { onair_colormap(&colours, Int32(colours.count)) }
 
     private func takeLine() {
@@ -141,7 +153,7 @@ final class SpectrumRenderer: NSObject, MTKViewDelegate {
 
         let columns = max(min(Int(view.drawableSize.width / 2), 800), 2)
         let top: Float = 1, bottom = Self.split
-        let low = noiseFloor - 15, range: Float = 80
+        let low = noiseFloor - 15, range = dbRange
         var fill = [SIMD3<Float>](), line = [SIMD3<Float>]()
         fill.reserveCapacity(columns * 2)
         line.reserveCapacity(columns)
@@ -193,6 +205,7 @@ private struct SpectrumGestures: UIViewRepresentable {
     let scrub: (CGFloat, Bool) -> Void              // one finger: points from the start, finished
     let pan: (CGFloat, Bool) -> Void                // two fingers: change in points since the last call, finished
     let zoom: (Double, Bool) -> Void                // scale from the start, finished
+    let height: (Float, Bool) -> Void               // two fingers up or down: scale of the dB range since the last call, finished
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -239,7 +252,7 @@ private struct SpectrumGestures: UIViewRepresentable {
                 lastHeight = y
             }
             if mode == .pan { parent?.pan(x - lastPan, done) }
-            if mode == .height { onair_spectrum_height(exp(Double(y - lastHeight) / 180)) }   // up: taller signals
+            if mode == .height { parent?.height(Float(exp(Double(y - lastHeight) / 180)), done) }   // up: taller signals
             lastPan = x
             lastHeight = y
             if done { finish() }
@@ -313,7 +326,8 @@ struct SpectrumPage: View {
                     },
                     scrub: { points, done in scrub(points: points, width: width, done: done) },
                     pan: { change, done in pan(change: change, width: width, done: done) },
-                    zoom: { scale, done in zoom(scale: scale, done: done) }
+                    zoom: { scale, done in zoom(scale: scale, done: done) },
+                    height: { factor, done in spectrum.scaleHeight(by: factor, done: done) }
                 )
                 if spectrum.visibleSpan < 1 {
                     HardwareKey(lit: true, action: resetZoom) {
